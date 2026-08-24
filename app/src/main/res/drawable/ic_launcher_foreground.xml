@@ -4,7 +4,12 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Pixelated P -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M30,30h30c10.8,0 19.5,8.7 19.5,19.5S70.8,69 60,69H40v12h-10V30z M40,40v19h20c5.2,0 9.5,-4.3 9.5,-9.5S65.2,40 60,40H40z" />
+        android:pathData="M32,24 h40 v32 h-32 v24 h-8 v-56 Z M40,32 v16 h24 v-16 Z" />
+    <!-- Decorative pixels -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M76,32 h4 v4 h-4 Z M24,56 h4 v4 h-4 Z M68,72 h4 v4 h-4 Z" />
 </vector>
