@@ -18,6 +18,7 @@ import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.ui.auth.LoginScreen
 import ovh.litapp.pixlit.ui.upload.UploadScreen
+import ovh.litapp.pixlit.ui.theme.PixlitTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -42,7 +43,7 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
 
         setContent {
-            MaterialTheme {
+            PixlitTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
