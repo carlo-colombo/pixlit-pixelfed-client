@@ -9,9 +9,13 @@ import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.api.toSafeString
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.utils.ImageUtils
+import ovh.litapp.pixlit.data.db.AppDatabase
+import ovh.litapp.pixlit.data.db.StatusDao
+import ovh.litapp.pixlit.data.db.StatusEntity
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -24,26 +28,25 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.File
 import java.io.FileOutputStream
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class PixelfedRepository(private val context: Context, private val tokenManager: TokenManager) {
+@Singleton
+class PixelfedRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val tokenManager: TokenManager,
+    private val okHttpClient: OkHttpClient,
+    private val gson: Gson,
+    private val statusDao: StatusDao
+) {
 
     private fun getRetrofit(baseUrl: String): Retrofit {
         val sanitizedUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
-        val gson = GsonBuilder()
-            .setLenient()
-            .create()
-
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
-        }
-        val client = OkHttpClient.Builder()
-            .addInterceptor(logging)
-            .build()
 
         return Retrofit.Builder()
             .baseUrl(sanitizedUrl)
             .addConverterFactory(GsonConverterFactory.create(gson))
-            .client(client)
+            .client(okHttpClient)
             .build()
     }
 
@@ -259,52 +262,90 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
         val instanceUrl = tokenManager.instanceUrl
         val accessToken = tokenManager.accessToken
 
-        val apiResult = if (!instanceUrl.isNullOrBlank() && !accessToken.isNullOrBlank()) {
-            try {
-                val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
-                val authHeader = "Bearer $accessToken"
-                
-                val verifyResponse = api.verifyCredentials(authHeader)
-                if (verifyResponse.isSuccessful) {
-                    val accountId = verifyResponse.body()?.getIdString()
-                    if (accountId != null) {
-                        val statusesResponse = api.getUserStatuses(authHeader, accountId, limit = 40)
-                        if (statusesResponse.isSuccessful) {
-                            val statuses = statusesResponse.body() ?: emptyList()
-                            if (statuses.isNotEmpty()) {
-                                Result.success(statuses)
-                            } else {
-                                Result.failure(Exception("API returned no statuses"))
-                            }
-                        } else {
-                            Result.failure(Exception("Failed to fetch statuses: ${statusesResponse.code()}"))
-                        }
-                    } else {
-                        Result.failure(Exception("Failed to get account ID"))
-                    }
-                } else {
-                    Result.failure(Exception("Failed to verify credentials: ${verifyResponse.code()}"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
+        if (instanceUrl == null) {
+            return@withContext Result.failure(Exception("Not logged in"))
+        }
+
+        // Try to fetch from API if forceRefresh is true or we don't have enough data
+        val apiResult = if (!accessToken.isNullOrBlank() && (forceRefresh || !tokenManager.isLoggedIn())) {
+            fetchFromApi(instanceUrl, accessToken)
         } else {
-            Result.failure(Exception("Not logged in"))
+            Result.failure(Exception("Skipping API fetch"))
         }
 
         val finalStatuses = apiResult.fold(
-            onSuccess = { statuses ->
-                Log.d(TAG, "getUserTopTagsAndPosts: API fetch succeeded, received ${statuses.size} statuses")
-                statuses
-            },
+            onSuccess = { it },
             onFailure = { error ->
-                Log.e(TAG, "getUserTopTagsAndPosts: API fetch failed, falling back to static statuses", error)
-                getStaticStatuses()
+                Log.e(TAG, "getUserTopTagsAndPosts: API fetch failed/skipped, trying Room", error)
+                // Try Room
+                val cached = try {
+                    statusDao.getStatuses(instanceUrl).map { entity ->
+                        StatusItem(
+                            id = com.google.gson.JsonPrimitive(entity.id),
+                            content = entity.content,
+                            text = entity.text,
+                            description = entity.description
+                        )
+                    }
+                } catch (e: Exception) {
+                    emptyList<StatusItem>()
+                }
+                
+                if (cached.isNotEmpty()) {
+                    cached
+                } else {
+                    Log.d(TAG, "getUserTopTagsAndPosts: Room empty, falling back to static statuses")
+                    getStaticStatuses()
+                }
             }
         )
 
         val topTags = extractTopTagsFromStatuses(finalStatuses, topCount = 20)
         Result.success(TagsAndPosts(topTags = topTags, statuses = finalStatuses))
+    }
+
+    private suspend fun fetchFromApi(instanceUrl: String, accessToken: String): Result<List<StatusItem>> {
+        return try {
+            val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
+            val authHeader = "Bearer $accessToken"
+
+            val verifyResponse = api.verifyCredentials(authHeader)
+            if (verifyResponse.isSuccessful) {
+                val accountId = verifyResponse.body()?.getIdString()
+                if (accountId != null) {
+                    val statusesResponse = api.getUserStatuses(authHeader, accountId, limit = 40)
+                    if (statusesResponse.isSuccessful) {
+                        val statuses = statusesResponse.body() ?: emptyList()
+                        if (statuses.isNotEmpty()) {
+                            // Save to Room
+                            val entities = statuses.mapNotNull { item ->
+                                val id = item.getIdString() ?: return@mapNotNull null
+                                StatusEntity(
+                                    id = id,
+                                    content = item.content,
+                                    text = item.text,
+                                    description = item.description,
+                                    createdAt = System.currentTimeMillis(),
+                                    instanceUrl = instanceUrl
+                                )
+                            }
+                            statusDao.insertStatuses(entities)
+                            Result.success(statuses)
+                        } else {
+                            Result.failure(Exception("API returned no statuses"))
+                        }
+                    } else {
+                        Result.failure(Exception("Failed to fetch statuses: ${statusesResponse.code()}"))
+                    }
+                } else {
+                    Result.failure(Exception("Failed to get account ID"))
+                }
+            } else {
+                Result.failure(Exception("Failed to verify credentials: ${verifyResponse.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     suspend fun getUserTopTags(forceRefresh: Boolean = false): Result<List<String>> {

@@ -218,6 +218,7 @@ fun UploadScreen(
     }
 
     Scaffold(
+        modifier = Modifier.systemBarsPadding(),
         topBar = {
             Column {
                 TopAppBar(

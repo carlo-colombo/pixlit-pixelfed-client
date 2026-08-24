@@ -137,7 +137,9 @@ data class StatusItem(
     @SerializedName("description") val description: String? = null,
     @SerializedName("spoiler_text") val spoilerText: String? = null,
     @SerializedName("media_attachments") val mediaAttachments: List<MediaAttachment>? = null
-)
+) {
+    fun getIdString(): String? = id.toSafeString()
+}
 
 data class StatusResponse(
     @SerializedName("id") val id: JsonElement? = null,

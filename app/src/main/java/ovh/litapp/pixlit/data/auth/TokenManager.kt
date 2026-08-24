@@ -2,8 +2,12 @@ package ovh.litapp.pixlit.data.auth
 
 import android.content.Context
 import android.content.SharedPreferences
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class TokenManager(context: Context) {
+@Singleton
+class TokenManager @Inject constructor(@ApplicationContext context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("pixlit_prefs", Context.MODE_PRIVATE)
 
     companion object {

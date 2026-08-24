@@ -6,6 +6,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -14,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import dagger.hilt.android.AndroidEntryPoint
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.ui.auth.LoginScreen
@@ -22,11 +24,13 @@ import ovh.litapp.pixlit.ui.theme.PixlitTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    private lateinit var tokenManager: TokenManager
-    private lateinit var repository: PixelfedRepository
+    @Inject lateinit var tokenManager: TokenManager
+    @Inject lateinit var repository: PixelfedRepository
 
     private var isAuthProcessing = mutableStateOf(false)
     private var isLoggedInState = mutableStateOf(false)
@@ -34,9 +38,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        tokenManager = TokenManager(this)
-        repository = PixelfedRepository(this, tokenManager)
+        enableEdgeToEdge()
 
         isLoggedInState.value = tokenManager.isLoggedIn()
 
