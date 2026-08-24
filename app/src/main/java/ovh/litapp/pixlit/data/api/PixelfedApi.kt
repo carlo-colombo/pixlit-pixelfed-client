@@ -1,4 +1,4 @@
-package com.example.pixelfed.data.api
+package ovh.litapp.pixlit.data.api
 
 import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName

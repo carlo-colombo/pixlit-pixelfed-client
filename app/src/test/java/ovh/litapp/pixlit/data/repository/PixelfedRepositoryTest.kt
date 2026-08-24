@@ -1,8 +1,8 @@
-package com.example.pixelfed.data.repository
+package ovh.litapp.pixlit.data.repository
 
-import com.example.pixelfed.data.api.MediaAttachment
-import com.example.pixelfed.data.api.StatusItem
-import com.example.pixelfed.data.api.TagItem
+import ovh.litapp.pixlit.data.api.MediaAttachment
+import ovh.litapp.pixlit.data.api.StatusItem
+import ovh.litapp.pixlit.data.api.TagItem
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

@@ -1,4 +1,4 @@
-package com.example.pixelfed.ui.auth
+package ovh.litapp.pixlit.ui.auth
 
 import android.content.Context
 import android.net.Uri
@@ -13,8 +13,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.example.pixelfed.data.auth.TokenManager
-import com.example.pixelfed.data.repository.PixelfedRepository
+import ovh.litapp.pixlit.data.auth.TokenManager
+import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import kotlinx.coroutines.launch
 
 @Composable
@@ -49,7 +49,7 @@ fun LoginScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Connect to Pixelfed",
+            text = "Connect to Pixlit",
             style = MaterialTheme.typography.headlineMedium
         )
 
@@ -181,7 +181,7 @@ fun LoginScreen(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             } else {
-                Text("Log In with Pixelfed")
+                Text("Log In with Pixlit")
             }
         }
     }

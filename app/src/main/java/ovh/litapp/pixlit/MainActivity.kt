@@ -1,4 +1,4 @@
-package com.example.pixelfed
+package ovh.litapp.pixlit
 
 import android.content.Intent
 import android.os.Bundle
@@ -13,10 +13,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.example.pixelfed.data.auth.TokenManager
-import com.example.pixelfed.data.repository.PixelfedRepository
-import com.example.pixelfed.ui.auth.LoginScreen
-import com.example.pixelfed.ui.upload.UploadScreen
+import ovh.litapp.pixlit.data.auth.TokenManager
+import ovh.litapp.pixlit.data.repository.PixelfedRepository
+import ovh.litapp.pixlit.ui.auth.LoginScreen
+import ovh.litapp.pixlit.ui.upload.UploadScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

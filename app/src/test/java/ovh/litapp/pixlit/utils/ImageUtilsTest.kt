@@ -1,4 +1,4 @@
-package com.example.pixelfed.utils
+package ovh.litapp.pixlit.utils
 
 import android.content.Context
 import android.graphics.Bitmap

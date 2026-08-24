@@ -1,4 +1,4 @@
-package com.example.pixelfed.ui.upload
+package ovh.litapp.pixlit.ui.upload
 
 import android.net.Uri
 import android.util.Log
@@ -28,8 +28,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import com.example.pixelfed.data.api.StatusItem
-import com.example.pixelfed.data.api.toSafeString
+import ovh.litapp.pixlit.data.api.StatusItem
+import ovh.litapp.pixlit.data.api.toSafeString
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,9 +41,9 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
-import com.example.pixelfed.data.repository.PixelfedRepository
-import com.example.pixelfed.utils.ImageMetadata
-import com.example.pixelfed.utils.ImageUtils
+import ovh.litapp.pixlit.data.repository.PixelfedRepository
+import ovh.litapp.pixlit.utils.ImageMetadata
+import ovh.litapp.pixlit.utils.ImageUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -220,7 +220,7 @@ fun UploadScreen(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text("Upload to Pixelfed") },
+                    title = { Text("Upload to Pixlit") },
                     actions = {
                         TextButton(onClick = onLogout) {
                             Text("Logout")
@@ -585,7 +585,7 @@ fun UploadScreen(
                         isUploading = false
                         result.fold(
                             onSuccess = {
-                                statusMessage = "Successfully uploaded ${selectedImageUris.size} photo(s) to Pixelfed!"
+                                statusMessage = "Successfully uploaded ${selectedImageUris.size} photo(s) to Pixlit!"
                                 isError = false
                                 selectedImageUris = emptyList()
                                 captionState = TextFieldValue("")

@@ -1,4 +1,4 @@
-package com.example.pixelfed.data.auth
+package ovh.litapp.pixlit.data.auth
 
 import android.content.Context
 import org.junit.Assert.assertEquals

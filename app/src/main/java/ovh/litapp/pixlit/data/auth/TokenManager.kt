@@ -1,10 +1,10 @@
-package com.example.pixelfed.data.auth
+package ovh.litapp.pixlit.data.auth
 
 import android.content.Context
 import android.content.SharedPreferences
 
 class TokenManager(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("pixelfed_prefs", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = context.getSharedPreferences("pixlit_prefs", Context.MODE_PRIVATE)
 
     companion object {
         private const val KEY_INSTANCE_URL = "instance_url"

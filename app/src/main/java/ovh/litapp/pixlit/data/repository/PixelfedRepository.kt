@@ -1,14 +1,14 @@
-package com.example.pixelfed.data.repository
+package ovh.litapp.pixlit.data.repository
 
 import android.content.Context
 import android.net.Uri
 import android.util.Log
-import com.example.pixelfed.data.api.PixelfedApi
-import com.example.pixelfed.data.api.StatusResponse
-import com.example.pixelfed.data.api.StatusItem
-import com.example.pixelfed.data.api.toSafeString
-import com.example.pixelfed.data.auth.TokenManager
-import com.example.pixelfed.utils.ImageUtils
+import ovh.litapp.pixlit.data.api.PixelfedApi
+import ovh.litapp.pixlit.data.api.StatusResponse
+import ovh.litapp.pixlit.data.api.StatusItem
+import ovh.litapp.pixlit.data.api.toSafeString
+import ovh.litapp.pixlit.data.auth.TokenManager
+import ovh.litapp.pixlit.utils.ImageUtils
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
@@ -52,7 +52,7 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
 
             val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
             val response = api.registerApp(
-                clientName = "Pixelfed Android Client",
+                clientName = "Pixlit Android Client",
                 redirectUris = redirectUri,
                 scopes = "read write follow",
                 website = "https://pixelfed.org"
