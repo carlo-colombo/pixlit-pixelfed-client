@@ -19,6 +19,7 @@ import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.File
@@ -31,10 +32,18 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
         val gson = GsonBuilder()
             .setLenient()
             .create()
+
+        val logging = HttpLoggingInterceptor().apply {
+            level = HttpLoggingInterceptor.Level.BODY
+        }
+        val client = OkHttpClient.Builder()
+            .addInterceptor(logging)
+            .build()
+
         return Retrofit.Builder()
             .baseUrl(sanitizedUrl)
             .addConverterFactory(GsonConverterFactory.create(gson))
-            .client(OkHttpClient.Builder().build())
+            .client(client)
             .build()
     }
 
@@ -220,7 +229,11 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
 
     fun getStaticStatuses(): List<StatusItem> {
         val jsonString = try {
-            context.assets.open("pixelfed-statuses.json").bufferedReader().use { it.readText() }
+            context.assets.open("pixelfed-statuses.json").use { inputStream ->
+                val size = inputStream.available()
+                Log.d(TAG, "getStaticStatuses: Reading pixelfed-statuses.json, size: $size bytes")
+                inputStream.bufferedReader().readText()
+            }
         } catch (e: Exception) {
             Log.e(TAG, "getStaticStatuses: Failed to read pixelfed-statuses.json from assets", e)
             return emptyList()
@@ -228,7 +241,9 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
 
         return try {
             val listType = object : TypeToken<List<StatusItem>>() {}.type
-            Gson().fromJson(jsonString, listType) ?: emptyList()
+            val statuses: List<StatusItem> = Gson().fromJson(jsonString, listType) ?: emptyList()
+            Log.d(TAG, "getStaticStatuses: Successfully parsed ${statuses.size} statuses")
+            statuses
         } catch (e: Exception) {
             Log.e(TAG, "getStaticStatuses: Failed to parse pixelfed-statuses.json", e)
             emptyList()
@@ -277,10 +292,16 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
             Result.failure(Exception("Not logged in"))
         }
 
-        val finalStatuses = apiResult.getOrElse {
-            Log.d(TAG, "getUserTopTagsAndPosts: API fetch failed or empty, falling back to static statuses. Error: ${it.message}")
-            getStaticStatuses()
-        }
+        val finalStatuses = apiResult.fold(
+            onSuccess = { statuses ->
+                Log.d(TAG, "getUserTopTagsAndPosts: API fetch succeeded, received ${statuses.size} statuses")
+                statuses
+            },
+            onFailure = { error ->
+                Log.d(TAG, "getUserTopTagsAndPosts: API fetch failed, falling back to static statuses. Error: ${error.message}")
+                getStaticStatuses()
+            }
+        )
 
         val topTags = extractTopTagsFromStatuses(finalStatuses, topCount = 20)
         Result.success(TagsAndPosts(topTags = topTags, statuses = finalStatuses))

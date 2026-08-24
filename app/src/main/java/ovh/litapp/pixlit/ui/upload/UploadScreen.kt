@@ -97,6 +97,7 @@ fun UploadScreen(
                 onFailure = { ex ->
                     Log.e("UploadScreen", "fetchTags failure: ${ex.message}", ex)
                     if (topTags.isEmpty()) {
+                        Log.d("UploadScreen", "fetchTags: Falling back to default static tags")
                         topTags = repository.getDefaultStaticTags()
                     }
                 }
