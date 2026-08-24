@@ -298,7 +298,7 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
                 statuses
             },
             onFailure = { error ->
-                Log.d(TAG, "getUserTopTagsAndPosts: API fetch failed, falling back to static statuses. Error: ${error.message}")
+                Log.e(TAG, "getUserTopTagsAndPosts: API fetch failed, falling back to static statuses", error)
                 getStaticStatuses()
             }
         )

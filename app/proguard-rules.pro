@@ -13,6 +13,14 @@
     @com.google.gson.annotations.SerializedName <fields>;
 }
 
+# Gson specific rules to fix IllegalStateException with TypeToken in release builds
+-keep class com.google.gson.reflect.TypeToken
+-keep class * extends com.google.gson.reflect.TypeToken
+-keep public class * implements java.lang.reflect.ParameterizedType
+
+# Keep all data models used with Gson/Retrofit
+-keep class ovh.litapp.pixlit.data.api.** { *; }
+
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**

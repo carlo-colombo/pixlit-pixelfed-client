@@ -2,6 +2,7 @@ package ovh.litapp.pixlit
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -107,6 +108,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onFailure = { ex ->
                             val msg = ex.localizedMessage ?: ex.message ?: ex.toString()
+                            Log.e("MainActivity", "OAuth Token Exchange Failed: $msg", ex)
                             oauthErrorMessageState.value = "OAuth Token Exchange Failed:\n$msg"
                             Toast.makeText(this@MainActivity, "OAuth Failed: $msg", Toast.LENGTH_LONG).show()
                         }

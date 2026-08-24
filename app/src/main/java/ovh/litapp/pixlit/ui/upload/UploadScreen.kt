@@ -95,7 +95,7 @@ fun UploadScreen(
                     }
                 },
                 onFailure = { ex ->
-                    Log.e("UploadScreen", "fetchTags failure: ${ex.message}", ex)
+                    Log.e("UploadScreen", "fetchTags failure: ${ex.localizedMessage ?: ex.message ?: ex.toString()}", ex)
                     if (topTags.isEmpty()) {
                         Log.d("UploadScreen", "fetchTags: Falling back to default static tags")
                         topTags = repository.getDefaultStaticTags()
@@ -592,8 +592,10 @@ fun UploadScreen(
                                 captionState = TextFieldValue("")
                             },
                             onFailure = { ex ->
-                                statusMessage = "Upload failed: ${ex.localizedMessage ?: "Unknown error"}"
+                                val msg = ex.localizedMessage ?: ex.message ?: ex.toString()
+                                statusMessage = "Upload failed: $msg"
                                 isError = true
+                                Log.e("UploadScreen", "Upload failed: $msg", ex)
                             }
                         )
                     }
