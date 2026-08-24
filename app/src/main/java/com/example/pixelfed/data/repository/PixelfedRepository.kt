@@ -237,13 +237,53 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
 
     fun getDefaultStaticTags(): List<String> {
         val statuses = getStaticStatuses()
-        return extractTopTagsFromStatuses(statuses, topCount = Int.MAX_VALUE)
+        return extractTopTagsFromStatuses(statuses, topCount = 20)
     }
 
     suspend fun getUserTopTagsAndPosts(forceRefresh: Boolean = false): Result<TagsAndPosts> = withContext(Dispatchers.IO) {
-        val statuses = getStaticStatuses()
-        val topTags = extractTopTagsFromStatuses(statuses, topCount = Int.MAX_VALUE)
-        Result.success(TagsAndPosts(topTags = topTags, statuses = statuses))
+        val instanceUrl = tokenManager.instanceUrl
+        val accessToken = tokenManager.accessToken
+
+        val apiResult = if (!instanceUrl.isNullOrBlank() && !accessToken.isNullOrBlank()) {
+            try {
+                val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
+                val authHeader = "Bearer $accessToken"
+                
+                val verifyResponse = api.verifyCredentials(authHeader)
+                if (verifyResponse.isSuccessful) {
+                    val accountId = verifyResponse.body()?.getIdString()
+                    if (accountId != null) {
+                        val statusesResponse = api.getUserStatuses(authHeader, accountId, limit = 40)
+                        if (statusesResponse.isSuccessful) {
+                            val statuses = statusesResponse.body() ?: emptyList()
+                            if (statuses.isNotEmpty()) {
+                                Result.success(statuses)
+                            } else {
+                                Result.failure(Exception("API returned no statuses"))
+                            }
+                        } else {
+                            Result.failure(Exception("Failed to fetch statuses: ${statusesResponse.code()}"))
+                        }
+                    } else {
+                        Result.failure(Exception("Failed to get account ID"))
+                    }
+                } else {
+                    Result.failure(Exception("Failed to verify credentials: ${verifyResponse.code()}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        } else {
+            Result.failure(Exception("Not logged in"))
+        }
+
+        val finalStatuses = apiResult.getOrElse {
+            Log.d(TAG, "getUserTopTagsAndPosts: API fetch failed or empty, falling back to static statuses. Error: ${it.message}")
+            getStaticStatuses()
+        }
+
+        val topTags = extractTopTagsFromStatuses(finalStatuses, topCount = 20)
+        Result.success(TagsAndPosts(topTags = topTags, statuses = finalStatuses))
     }
 
     suspend fun getUserTopTags(forceRefresh: Boolean = false): Result<List<String>> {
@@ -317,7 +357,7 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
 
         fun extractTopTagsFromStatuses(
             statuses: List<StatusItem>,
-            topCount: Int = Int.MAX_VALUE,
+            topCount: Int = 20,
             staticTags: List<String> = emptyList()
         ): List<String> {
             val tagCounts = mutableMapOf<String, Int>()
@@ -328,7 +368,7 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
             }.distinct()
 
             for (status in statuses) {
-                // 1. Static tags (passed staticTags parameter + static tags array provided in status by API)
+                // 1. Static tags
                 val staticInStatus = mutableListOf<String>()
                 sanitizedStaticParam.forEach { tag ->
                     staticInStatus.add(tag)
@@ -340,7 +380,7 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
                     }
                 }
 
-                // 2. Extracted tags from post text (content, text, description, spoilerText) and media attachment descriptions
+                // 2. Extracted tags from post text and media attachment descriptions
                 val extractedInStatus = mutableListOf<String>()
                 val mediaDescriptions = status.mediaAttachments?.mapNotNull { it.description } ?: emptyList()
                 val textSources = listOfNotNull(status.content, status.text, status.description, status.spoilerText) + mediaDescriptions
@@ -355,22 +395,20 @@ class PixelfedRepository(private val context: Context, private val tokenManager:
                     }
                 }
 
-                // Concatenate extracted tags to static tags, then make unique per status
-                val concatenatedTags = extractedInStatus + staticInStatus
-                val uniqueInStatus = concatenatedTags.distinct()
+                val uniqueInStatus = (extractedInStatus + staticInStatus).distinct()
 
                 for (tag in uniqueInStatus) {
                     tagCounts[tag] = (tagCounts[tag] ?: 0) + 1
                 }
             }
 
-            val sortedFromStatuses = tagCounts.entries
-                .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
-                .map { it.key }
+            // Get top tags by count, then sort the resulting top set alphabetically
+            val topEntries = tagCounts.entries
+                .sortedByDescending { it.value }
+                .take(topCount)
+                .sortedBy { it.key }
 
-            val combinedList = (sortedFromStatuses + sanitizedStaticParam).distinct()
-
-            return combinedList.take(topCount)
+            return topEntries.map { "#${it.key} (${it.value})" }
         }
     }
 
