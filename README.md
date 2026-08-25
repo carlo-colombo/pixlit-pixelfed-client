@@ -1,6 +1,6 @@
 # Pixlit
 
-Pixlit is a modern Android image uploader for [Pixelfed](https://pixelfed.org/), the federated image sharing platform. This is a personal project built for one user (carlo-colombo) with a focus on a streamlined upload experience.
+Pixlit is an Android image uploader for [Pixelfed](https://pixelfed.org/), the federated image sharing platform. This is a personal project built for one user (carlo-colombo) with a focus on a streamlined upload experience.
 
 ## Tech Stack
 - **Language:** Kotlin
