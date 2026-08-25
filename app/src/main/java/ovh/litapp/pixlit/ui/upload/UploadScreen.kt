@@ -147,7 +147,7 @@ fun UploadContent(
                         }
                     }
                 )
-                TabRow(selectedTabIndex = selectedTab) {
+                PrimaryTabRow(selectedTabIndex = selectedTab) {
                     tabs.forEachIndexed { index, title ->
                         Tab(
                             selected = selectedTab == index,
@@ -295,7 +295,7 @@ fun UploadContent(
 
                 if (statusMessage != null) {
                     Text(
-                        text = statusMessage!!,
+                        text = statusMessage,
                         color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.bodyMedium
                     )

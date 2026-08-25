@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import ovh.litapp.pixlit.R
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import kotlinx.coroutines.launch
@@ -27,7 +28,7 @@ fun LoginScreen(
     initialErrorMessage: String? = null
 ) {
     val scope = rememberCoroutineScope()
-    val redirectUri = "pixelfed-app://oauth"
+    val redirectUri = context.getString(R.string.redirect_uri)
 
     LoginContent(
         initialErrorMessage = initialErrorMessage,

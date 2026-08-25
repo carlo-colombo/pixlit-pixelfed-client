@@ -1,10 +1,12 @@
 package ovh.litapp.pixlit
 
+import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +17,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val tokenManager: TokenManager,
     private val repository: PixelfedRepository
 ) : ViewModel() {
@@ -30,7 +33,10 @@ class MainViewModel @Inject constructor(
 
     fun handleIntent(intent: Intent?) {
         val uri = intent?.data
-        if (uri != null && uri.scheme == "pixelfed-app" && uri.host == "oauth") {
+        val redirectUri = context.getString(R.string.redirect_uri)
+        val scheme = redirectUri.split("://").first()
+
+        if (uri != null && uri.scheme == scheme && uri.host == "oauth") {
             val error = uri.getQueryParameter("error")
             val errorDescription = uri.getQueryParameter("error_description")
             if (error != null) {
@@ -43,7 +49,7 @@ class MainViewModel @Inject constructor(
                 _isAuthProcessing.value = true
                 _authError.value = null
                 viewModelScope.launch {
-                    val result = repository.exchangeCodeForToken(code, "pixelfed-app://oauth")
+                    val result = repository.exchangeCodeForToken(code, redirectUri)
                     _isAuthProcessing.value = false
                     result.fold(
                         onSuccess = {

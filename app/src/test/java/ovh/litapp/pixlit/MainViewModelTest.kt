@@ -1,5 +1,6 @@
 package ovh.litapp.pixlit
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import io.mockk.coEvery
@@ -16,10 +17,12 @@ import org.junit.Before
 import org.junit.Test
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
+import ovh.litapp.pixlit.R
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModelTest {
 
+    private val context = mockk<Context>(relaxed = true)
     private val testDispatcher = StandardTestDispatcher()
     private val tokenManager = mockk<TokenManager>(relaxed = true)
     private val repository = mockk<PixelfedRepository>(relaxed = true)
@@ -30,7 +33,8 @@ class MainViewModelTest {
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         every { tokenManager.isLoggedIn() } returns false
-        viewModel = MainViewModel(tokenManager, repository)
+        every { context.getString(R.string.redirect_uri) } returns "pixelfed-app://oauth"
+        viewModel = MainViewModel(context, tokenManager, repository)
     }
 
     @After

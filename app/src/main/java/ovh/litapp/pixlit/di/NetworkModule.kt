@@ -2,6 +2,7 @@ package ovh.litapp.pixlit.di
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.Strictness
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,7 +22,7 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideGson(): Gson = GsonBuilder()
-        .setLenient()
+        .setStrictness(Strictness.LENIENT)
         .create()
 
     @Provides

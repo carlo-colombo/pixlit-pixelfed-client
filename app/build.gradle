@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace 'ovh.litapp.pixlit'
+    namespace = 'ovh.litapp.pixlit'
     compileSdk 37
 
     def isCiMain = System.getenv("GITHUB_ACTIONS") == "true" && System.getenv("GITHUB_REF") == "refs/heads/main"
@@ -21,11 +21,11 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
-            useSupportLibrary true
+            useSupportLibrary = true
         }
 
         manifestPlaceholders = [
-            appAuthRedirectScheme: "pixelfed-app",
+            appAuthRedirectScheme: "pixlit",
             appLabel: "Pixlit" + buildSuffix
         ]
     }
@@ -36,6 +36,7 @@ android {
             dimension "env"
             applicationIdSuffix ".dev"
             manifestPlaceholders.appLabel = "Pixlit Dev" + buildSuffix
+            manifestPlaceholders.appAuthRedirectScheme = "pixlit-dev"
         }
         prod {
             dimension "env"
@@ -46,7 +47,7 @@ android {
     buildTypes {
         release {
             minifyEnabled true
-            shrinkResources true
+            shrinkResources = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -57,7 +58,7 @@ android {
     }
 
     buildFeatures {
-        compose true
+        compose = true
     }
 
     packaging {
@@ -69,8 +70,14 @@ android {
     testOptions {
         unitTests.all {
             maxHeapSize = "2048m"
+            jvmArgs "-Xshare:off"
         }
     }
+}
+
+// Keep the conventional test task usable while local builds default to dev.
+tasks.register("testDebugUnitTest") {
+    dependsOn("testDevDebugUnitTest")
 }
 
 dependencies {

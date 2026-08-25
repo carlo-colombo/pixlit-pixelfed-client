@@ -1,0 +1,3 @@
+<resources>
+    <string name="redirect_uri">pixlit://oauth</string>
+</resources>
