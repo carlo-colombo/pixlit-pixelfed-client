@@ -12,4 +12,21 @@
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M80,32 h4 v4 h-4 Z M24,56 h4 v4 h-4 Z M68,72 h4 v4 h-4 Z" />
+    <!-- Bottom-aligned pixel columns reveal the background below the P -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.25"
+        android:pathData="M6,98h4v4h-4z M6,103h4v4h-4z M24,98h4v4h-4z M24,103h4v4h-4z M48,98h4v4h-4z M48,103h4v4h-4z M66,98h4v4h-4z M66,103h4v4h-4z M90,93h4v4h-4z M90,98h4v4h-4z M90,103h4v4h-4z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.33"
+        android:pathData="M12,93h4v4h-4z M12,98h4v4h-4z M12,103h4v4h-4z M30,88h4v4h-4z M30,93h4v4h-4z M30,98h4v4h-4z M30,103h4v4h-4z M54,98h4v4h-4z M54,103h4v4h-4z M72,93h4v4h-4z M72,98h4v4h-4z M72,103h4v4h-4z M96,103h4v4h-4z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.42"
+        android:pathData="M18,98h4v4h-4z M18,103h4v4h-4z M36,93h4v4h-4z M36,98h4v4h-4z M36,103h4v4h-4z M60,88h4v4h-4z M60,93h4v4h-4z M60,98h4v4h-4z M60,103h4v4h-4z M84,98h4v4h-4z M84,103h4v4h-4z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.5"
+        android:pathData="M42,88h4v4h-4z M42,93h4v4h-4z M42,98h4v4h-4z M42,103h4v4h-4z M78,88h4v4h-4z M78,93h4v4h-4z M78,98h4v4h-4z M78,103h4v4h-4z" />
 </vector>
