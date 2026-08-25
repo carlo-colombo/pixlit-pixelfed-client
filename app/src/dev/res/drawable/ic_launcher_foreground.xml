@@ -4,16 +4,12 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Pixelated P -->
+    <!-- Pixelated P, with a small gap between each square -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M32,24 h40 v32 h-32 v24 h-8 v-56 Z M40,32 v16 h24 v-16 Z" />
-    <!-- Decorative pixels -->
+        android:pathData="M33,24h7v7h-7z M42,24h7v7h-7z M51,24h7v7h-7z M60,24h7v7h-7z M69,24h7v7h-7z M33,33h7v7h-7z M69,33h7v7h-7z M33,42h7v7h-7z M69,42h7v7h-7z M33,51h7v7h-7z M42,51h7v7h-7z M51,51h7v7h-7z M60,51h7v7h-7z M69,51h7v7h-7z M33,60h7v7h-7z M33,69h7v7h-7z M33,78h7v7h-7z" />
+    <!-- Random decorative squares around the icon -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M76,32 h4 v4 h-4 Z M24,56 h4 v4 h-4 Z M68,72 h4 v4 h-4 Z" />
-    <!-- Pixelated D badge -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M76,68 h12 v4 h4 v8 h-4 v4 h-12 v-16 Z M80,72 v8 h8 v-8 Z" />
+        android:pathData="M80,32 h4 v4 h-4 Z M24,56 h4 v4 h-4 Z M68,72 h4 v4 h-4 Z" />
 </vector>
