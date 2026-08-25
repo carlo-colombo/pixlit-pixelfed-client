@@ -108,7 +108,8 @@ class PixelfedRepositoryTest {
         val topTags = PixelfedRepository.extractTopTagsFromStatuses(statuses, topCount = Int.MAX_VALUE, staticTags = sampleStaticTags)
 
         assertEquals(sampleStaticTags.size, topTags.size)
-        assertEquals(sampleStaticTags, topTags)
+        // Expecting alphabetical order for tags with same frequency
+        assertEquals(sampleStaticTags.sorted(), topTags)
     }
 
     @Test

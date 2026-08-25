@@ -93,13 +93,9 @@ class PixelfedRepository @Inject constructor(
                 return@withContext Result.failure(Exception(fullError))
             }
         } catch (e: Throwable) {
-            e.printStackTrace()
-            val sw = java.io.StringWriter()
-            e.printStackTrace(java.io.PrintWriter(sw))
-            val stackTraceString = sw.toString()
+            Log.e(TAG, "Network/Registration failed", e)
             val causeMessage = e.localizedMessage ?: e.message ?: e.toString()
-            val errorMsg = "Network/Registration failed (${e.javaClass.name}): $causeMessage\n\nStacktrace:\n$stackTraceString"
-            return@withContext Result.failure(Exception(errorMsg, e))
+            return@withContext Result.failure(Exception("Registration failed: $causeMessage"))
         }
     }
 
@@ -148,13 +144,9 @@ class PixelfedRepository @Inject constructor(
                 return@withContext Result.failure(Exception(fullError))
             }
         } catch (e: Throwable) {
-            e.printStackTrace()
-            val sw = java.io.StringWriter()
-            e.printStackTrace(java.io.PrintWriter(sw))
-            val stackTraceString = sw.toString()
+            Log.e(TAG, "OAuth token exchange failed", e)
             val causeMessage = e.localizedMessage ?: e.message ?: e.toString()
-            val errorMsg = "OAuth token exchange failed (${e.javaClass.name}): $causeMessage\n\nStacktrace:\n$stackTraceString"
-            return@withContext Result.failure(Exception(errorMsg, e))
+            return@withContext Result.failure(Exception("Token exchange failed: $causeMessage"))
         }
     }
 
@@ -429,6 +421,10 @@ class PixelfedRepository @Inject constructor(
                 if (s.isNotEmpty()) s else null
             }.distinct()
 
+            sanitizedStaticParam.forEach { tag ->
+                tagCounts[tag] = 0
+            }
+
             for (status in statuses) {
                 // 1. Static tags
                 val staticInStatus = mutableListOf<String>()
@@ -464,13 +460,12 @@ class PixelfedRepository @Inject constructor(
                 }
             }
 
-            // Get top tags by count, then sort the resulting top set alphabetically
+            // Get top tags by count
             val topEntries = tagCounts.entries
-                .sortedByDescending { it.value }
+                .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
                 .take(topCount)
-                .sortedBy { it.key }
 
-            return topEntries.map { "#${it.key} (${it.value})" }
+            return topEntries.map { it.key }
         }
     }
 
