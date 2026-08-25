@@ -11,11 +11,12 @@ import androidx.compose.ui.unit.dp
 
 import androidx.compose.ui.tooling.preview.Preview
 import ovh.litapp.pixlit.ui.theme.PixlitTheme
+import ovh.litapp.pixlit.data.repository.TagCount
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TagSelectionCloud(
-    topTags: List<String>,
+    topTags: List<TagCount>,
     isLoadingTags: Boolean,
     onTagClick: (String) -> Unit,
     onRefreshClick: () -> Unit,
@@ -57,8 +58,8 @@ fun TagSelectionCloud(
             ) {
                 topTags.forEach { tag ->
                     SuggestionChip(
-                        onClick = { onTagClick(tag) },
-                        label = { Text("#$tag") }
+                        onClick = { onTagClick(tag.name) },
+                        label = { Text("#${tag.name} (${tag.count})") }
                     )
                 }
             }
@@ -78,7 +79,13 @@ fun TagSelectionCloud(
 fun TagSelectionCloudPreview() {
     PixlitTheme {
         TagSelectionCloud(
-            topTags = listOf("photography", "art", "nature", "travel", "food"),
+            topTags = listOf(
+                TagCount("photography", 21),
+                TagCount("art", 18),
+                TagCount("nature", 12),
+                TagCount("travel", 8),
+                TagCount("food", 4)
+            ),
             isLoadingTags = false,
             onTagClick = {},
             onRefreshClick = {},

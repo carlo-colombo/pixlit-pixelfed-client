@@ -14,6 +14,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
+import ovh.litapp.pixlit.data.repository.TagCount
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class UploadViewModelTest {
@@ -29,7 +30,15 @@ class UploadViewModelTest {
         Dispatchers.setMain(testDispatcher)
         every { repository.getDefaultStaticTags() } returns listOf("#tag1", "#tag2")
         coEvery { repository.getUserTopTagsAndPosts(any()) } answers {
-            Result.success(PixelfedRepository.TagsAndPosts(listOf("#tag1", "#tag2"), emptyList()))
+            Result.success(
+                PixelfedRepository.TagsAndPosts(
+                    listOf(
+                        TagCount("tag1", 2),
+                        TagCount("tag2", 1)
+                    ),
+                    emptyList()
+                )
+            )
         }
         viewModel = UploadViewModel(context, repository)
     }

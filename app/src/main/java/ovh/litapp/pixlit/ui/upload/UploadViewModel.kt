@@ -43,7 +43,7 @@ class UploadViewModel @Inject constructor(
     private val _isError = MutableStateFlow(false)
     val isError = _isError.asStateFlow()
 
-    private val _topTags = MutableStateFlow<List<String>>(repository.getDefaultStaticTags())
+    private val _topTags = MutableStateFlow(repository.getDefaultStaticTagCounts())
     val topTags = _topTags.asStateFlow()
 
     private val _recentStatuses = MutableStateFlow<List<StatusItem>>(emptyList())
@@ -111,7 +111,7 @@ class UploadViewModel @Inject constructor(
             val result = repository.getUserTopTagsAndPosts(forceRefresh = forceRefresh)
             result.fold(
                 onSuccess = { data ->
-                    _topTags.value = if (data.topTags.isNotEmpty()) data.topTags else repository.getDefaultStaticTags()
+                    _topTags.value = if (data.topTags.isNotEmpty()) data.topTags else repository.getDefaultStaticTagCounts()
                     if (data.statuses.isNotEmpty()) {
                         _recentStatuses.value = data.statuses
                     }
@@ -119,7 +119,7 @@ class UploadViewModel @Inject constructor(
                 onFailure = { ex ->
                     Log.e("UploadViewModel", "fetchTags failure", ex)
                     if (_topTags.value.isEmpty()) {
-                        _topTags.value = repository.getDefaultStaticTags()
+                        _topTags.value = repository.getDefaultStaticTagCounts()
                     }
                 }
             )

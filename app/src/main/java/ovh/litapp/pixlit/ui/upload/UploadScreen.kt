@@ -25,8 +25,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import ovh.litapp.pixlit.data.api.StatusItem
-import ovh.litapp.pixlit.data.api.toSafeString
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
+import ovh.litapp.pixlit.data.api.toSafeString
+import ovh.litapp.pixlit.data.repository.TagCount
 import ovh.litapp.pixlit.ui.theme.PixlitTheme
 import ovh.litapp.pixlit.ui.upload.components.*
 import android.net.Uri
@@ -90,7 +91,7 @@ fun UploadContent(
     isUploading: Boolean,
     statusMessage: String?,
     isError: Boolean,
-    topTags: List<String>,
+    topTags: List<TagCount>,
     recentStatuses: List<StatusItem>,
     isLoadingTags: Boolean,
     currentPage: Int,
@@ -392,7 +393,11 @@ fun UploadScreenPreview() {
             isUploading = false,
             statusMessage = null,
             isError = false,
-            topTags = listOf("pixelfed", "android", "kotlin"),
+            topTags = listOf(
+                TagCount("pixelfed", 21),
+                TagCount("android", 14),
+                TagCount("kotlin", 8)
+            ),
             recentStatuses = emptyList(),
             isLoadingTags = false,
             currentPage = 0,

@@ -31,6 +31,10 @@ import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class TagCount(val name: String, val count: Int)
+
+private const val MAX_DISPLAYED_TAGS = 30
+
 @Singleton
 class PixelfedRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -218,7 +222,7 @@ class PixelfedRepository @Inject constructor(
     }
 
     data class TagsAndPosts(
-        val topTags: List<String>,
+        val topTags: List<TagCount>,
         val statuses: List<StatusItem>
     )
 
@@ -247,7 +251,11 @@ class PixelfedRepository @Inject constructor(
 
     fun getDefaultStaticTags(): List<String> {
         val statuses = getStaticStatuses()
-        return extractTopTagsFromStatuses(statuses, topCount = 20)
+        return extractTopTagsFromStatuses(statuses, topCount = MAX_DISPLAYED_TAGS)
+    }
+
+    fun getDefaultStaticTagCounts(): List<TagCount> {
+        return extractTopTagCountsFromStatuses(getStaticStatuses(), topCount = MAX_DISPLAYED_TAGS)
     }
 
     suspend fun getUserTopTagsAndPosts(forceRefresh: Boolean = false): Result<TagsAndPosts> = withContext(Dispatchers.IO) {
@@ -292,7 +300,7 @@ class PixelfedRepository @Inject constructor(
             }
         )
 
-        val topTags = extractTopTagsFromStatuses(finalStatuses, topCount = 20)
+        val topTags = extractTopTagCountsFromStatuses(finalStatuses, topCount = MAX_DISPLAYED_TAGS)
         Result.success(TagsAndPosts(topTags = topTags, statuses = finalStatuses))
     }
 
@@ -341,7 +349,7 @@ class PixelfedRepository @Inject constructor(
     }
 
     suspend fun getUserTopTags(forceRefresh: Boolean = false): Result<List<String>> {
-        return getUserTopTagsAndPosts(forceRefresh).map { it.topTags }
+        return getUserTopTagsAndPosts(forceRefresh).map { result -> result.topTags.map { it.name } }
     }
 
     companion object {
@@ -414,6 +422,16 @@ class PixelfedRepository @Inject constructor(
             topCount: Int = 20,
             staticTags: List<String> = emptyList()
         ): List<String> {
+            return extractTopTagCountsFromStatuses(statuses, topCount, staticTags)
+                .sortedWith(compareByDescending<TagCount> { it.count }.thenBy { it.name })
+                .map { it.name }
+        }
+
+        fun extractTopTagCountsFromStatuses(
+            statuses: List<StatusItem>,
+            topCount: Int = MAX_DISPLAYED_TAGS,
+            staticTags: List<String> = emptyList()
+        ): List<TagCount> {
             val tagCounts = mutableMapOf<String, Int>()
 
             val sanitizedStaticParam = staticTags.mapNotNull { tag ->
@@ -460,13 +478,14 @@ class PixelfedRepository @Inject constructor(
                 }
             }
 
-            // Get top tags by count
-            val topEntries = tagCounts.entries
+            // Select the most-used tags before alphabetizing the displayed result.
+            return tagCounts.entries
                 .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
                 .take(topCount)
-
-            return topEntries.map { it.key }
+                .sortedBy { it.key }
+                .map { TagCount(it.key, it.value) }
         }
+
     }
 
     private fun getFileFromUri(uri: Uri): File? {

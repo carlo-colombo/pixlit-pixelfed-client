@@ -68,6 +68,28 @@ class PixelfedRepositoryTest {
     }
 
     @Test
+    fun testExtractTopTagCounts_selectsMostUsedThenSortsAlphabetically() {
+        val statuses = listOf(
+            StatusItem(content = "#zebra #apple #apple #apple"),
+            StatusItem(content = "#zebra #banana #banana"),
+            StatusItem(content = "#zebra #cherry"),
+            StatusItem(content = "#date")
+        )
+
+        val topTags = PixelfedRepository.extractTopTagCountsFromStatuses(statuses, topCount = 3)
+
+        assertEquals(
+            listOf(
+                TagCount("apple", 1),
+                TagCount("zebra", 3),
+                TagCount("banana", 1)
+            ).sortedBy { it.name },
+            topTags
+        )
+        assertEquals(listOf("apple", "banana", "zebra"), topTags.map { it.name })
+    }
+
+    @Test
     fun testExtractTopTagsFromStatuses_extractsAllWithoutCappingWhenUnbounded() {
         val statuses = (1..30).map { i ->
             StatusItem(tags = listOf(TagItem("tag$i")))
