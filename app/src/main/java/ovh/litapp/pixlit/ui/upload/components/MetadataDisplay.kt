@@ -7,7 +7,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import ovh.litapp.pixlit.ui.theme.PixlitTheme
 import ovh.litapp.pixlit.utils.ImageMetadata
 import ovh.litapp.pixlit.utils.ImageUtils
 
@@ -62,5 +64,49 @@ fun MetadataDisplay(
                 }
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MetadataDisplayPreview() {
+    PixlitTheme {
+        MetadataDisplay(
+            currentPage = 0,
+            totalImages = 1,
+            originalMetadata = ImageMetadata(
+                sizeBytes = 1024 * 1024 * 5, // 5MB
+                width = 3000,
+                height = 2000
+            ),
+            resizedMetadata = null,
+            isCalculatingResized = false,
+            resizeTo8Mb = false,
+            modifier = Modifier.padding(16.dp)
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MetadataDisplayResizedPreview() {
+    PixlitTheme {
+        MetadataDisplay(
+            currentPage = 0,
+            totalImages = 3,
+            originalMetadata = ImageMetadata(
+                sizeBytes = 1024 * 1024 * 12, // 12MB
+                width = 5000,
+                height = 4000
+            ),
+            resizedMetadata = ImageMetadata(
+                sizeBytes = 1024 * 1024 * 7, // 7MB
+                width = 3500,
+                height = 2800
+            ),
+            isCalculatingResized = false,
+            resizeTo8Mb = true,
+            modifier = Modifier.padding(16.dp)
+        )
     }
 }

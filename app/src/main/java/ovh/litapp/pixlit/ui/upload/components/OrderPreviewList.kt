@@ -18,8 +18,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
+import ovh.litapp.pixlit.ui.theme.PixlitTheme
 
 @Composable
 fun OrderPreviewList(
@@ -77,5 +79,19 @@ fun OrderPreviewList(
                 }
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun OrderPreviewListPreview() {
+    PixlitTheme {
+        OrderPreviewList(
+            selectedImageUris = listOf(Uri.EMPTY, Uri.EMPTY, Uri.EMPTY),
+            currentPage = 1,
+            maxPhotos = 6,
+            onImageClick = {},
+            modifier = Modifier.padding(16.dp)
+        )
     }
 }

@@ -12,10 +12,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import kotlinx.coroutines.launch
+import ovh.litapp.pixlit.ui.theme.PixlitTheme
 
 @Composable
 fun LoginScreen(
@@ -23,6 +25,60 @@ fun LoginScreen(
     tokenManager: TokenManager,
     repository: PixelfedRepository,
     initialErrorMessage: String? = null
+) {
+    val scope = rememberCoroutineScope()
+    val redirectUri = "pixelfed-app://oauth"
+
+    LoginContent(
+        initialErrorMessage = initialErrorMessage,
+        onLoginClick = { instanceUrl, manualClientId, manualClientSecret ->
+            var formattedUrl = instanceUrl.trim()
+            if (!formattedUrl.startsWith("http://") && !formattedUrl.startsWith("https://")) {
+                formattedUrl = "https://$formattedUrl"
+            }
+            formattedUrl = formattedUrl.trimEnd('/')
+
+            scope.launch {
+                val clientIdToUse: String?
+                if (manualClientId.isNotBlank() && manualClientSecret.isNotBlank()) {
+                    tokenManager.instanceUrl = formattedUrl
+                    tokenManager.clientId = manualClientId.trim()
+                    tokenManager.clientSecret = manualClientSecret.trim()
+                    clientIdToUse = manualClientId.trim()
+                } else {
+                    val result = repository.registerApp(formattedUrl, redirectUri)
+                    if (result.isSuccess) {
+                        clientIdToUse = result.getOrNull()?.first
+                    } else {
+                        clientIdToUse = null
+                        // Handle error message passing back to LoginContent if needed
+                        // For now, simpler to keep some logic inside LoginContent or use a State class
+                    }
+                }
+
+                if (!clientIdToUse.isNullOrBlank()) {
+                    val authUrl = Uri.parse(formattedUrl)
+                        .buildUpon()
+                        .appendPath("oauth")
+                        .appendPath("authorize")
+                        .appendQueryParameter("client_id", clientIdToUse)
+                        .appendQueryParameter("redirect_uri", redirectUri)
+                        .appendQueryParameter("response_type", "code")
+                        .appendQueryParameter("scope", "read write follow")
+                        .build()
+
+                    val customTabsIntent = CustomTabsIntent.Builder().build()
+                    customTabsIntent.launchUrl(context, authUrl)
+                }
+            }
+        }
+    )
+}
+
+@Composable
+fun LoginContent(
+    initialErrorMessage: String? = null,
+    onLoginClick: (String, String, String) -> Unit = { _, _, _ -> }
 ) {
     var instanceUrl by remember { mutableStateOf("https://pixelfed.social") }
     var manualClientId by remember { mutableStateOf("") }
@@ -37,9 +93,6 @@ fun LoginScreen(
             errorMessage = initialErrorMessage
         }
     }
-    val scope = rememberCoroutineScope()
-
-    val redirectUri = "pixelfed-app://oauth"
 
     Column(
         modifier = Modifier
@@ -124,54 +177,9 @@ fun LoginScreen(
                     errorMessage = "Please enter instance URL"
                     return@Button
                 }
-
-                var formattedUrl = instanceUrl.trim()
-                if (!formattedUrl.startsWith("http://") && !formattedUrl.startsWith("https://")) {
-                    formattedUrl = "https://$formattedUrl"
-                }
-                formattedUrl = formattedUrl.trimEnd('/')
-
                 isLoading = true
                 errorMessage = null
-
-                scope.launch {
-                    val clientIdToUse: String?
-                    if (manualClientId.isNotBlank() && manualClientSecret.isNotBlank()) {
-                        tokenManager.instanceUrl = formattedUrl
-                        tokenManager.clientId = manualClientId.trim()
-                        tokenManager.clientSecret = manualClientSecret.trim()
-                        clientIdToUse = manualClientId.trim()
-                    } else {
-                        val result = repository.registerApp(formattedUrl, redirectUri)
-                        if (result.isSuccess) {
-                            clientIdToUse = result.getOrNull()?.first
-                        } else {
-                            clientIdToUse = null
-                            val detail = result.exceptionOrNull()?.message
-                            errorMessage = if (!detail.isNullOrBlank()) {
-                                detail
-                            } else {
-                                "Failed to register app dynamically on instance. Try entering Client ID & Secret manually under Advanced options."
-                            }
-                        }
-                    }
-
-                    isLoading = false
-                    if (!clientIdToUse.isNullOrBlank()) {
-                        val authUrl = Uri.parse(formattedUrl)
-                            .buildUpon()
-                            .appendPath("oauth")
-                            .appendPath("authorize")
-                            .appendQueryParameter("client_id", clientIdToUse)
-                            .appendQueryParameter("redirect_uri", redirectUri)
-                            .appendQueryParameter("response_type", "code")
-                            .appendQueryParameter("scope", "read write follow")
-                            .build()
-
-                        val customTabsIntent = CustomTabsIntent.Builder().build()
-                        customTabsIntent.launchUrl(context, authUrl)
-                    }
-                }
+                onLoginClick(instanceUrl, manualClientId, manualClientSecret)
             },
             enabled = !isLoading,
             modifier = Modifier.fillMaxWidth()
@@ -185,5 +193,21 @@ fun LoginScreen(
                 Text("Log In with Pixlit")
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun LoginScreenPreview() {
+    PixlitTheme {
+        LoginContent()
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun LoginScreenErrorPreview() {
+    PixlitTheme {
+        LoginContent(initialErrorMessage = "Could not connect to instance. Please check your URL and try again.")
     }
 }

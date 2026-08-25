@@ -9,6 +9,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+import androidx.compose.ui.tooling.preview.Preview
+import ovh.litapp.pixlit.ui.theme.PixlitTheme
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TagSelectionCloud(
@@ -67,5 +70,33 @@ fun TagSelectionCloud(
                 modifier = Modifier.padding(vertical = 4.dp)
             )
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun TagSelectionCloudPreview() {
+    PixlitTheme {
+        TagSelectionCloud(
+            topTags = listOf("photography", "art", "nature", "travel", "food"),
+            isLoadingTags = false,
+            onTagClick = {},
+            onRefreshClick = {},
+            modifier = Modifier.padding(16.dp)
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun TagSelectionCloudLoadingPreview() {
+    PixlitTheme {
+        TagSelectionCloud(
+            topTags = emptyList(),
+            isLoadingTags = true,
+            onTagClick = {},
+            onRefreshClick = {},
+            modifier = Modifier.padding(16.dp)
+        )
     }
 }

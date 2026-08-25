@@ -20,11 +20,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.api.toSafeString
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
+import ovh.litapp.pixlit.ui.theme.PixlitTheme
 import ovh.litapp.pixlit.ui.upload.components.*
+import android.net.Uri
+import ovh.litapp.pixlit.utils.ImageMetadata
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -47,6 +53,62 @@ fun UploadScreen(
     val resizedMetadata by viewModel.resizedMetadata.collectAsState()
     val isCalculatingResized by viewModel.isCalculatingResized.collectAsState()
 
+    UploadContent(
+        selectedImageUris = selectedImageUris,
+        captionState = captionState,
+        resizeTo8Mb = resizeTo8Mb,
+        isUploading = isUploading,
+        statusMessage = statusMessage,
+        isError = isError,
+        topTags = topTags,
+        recentStatuses = recentStatuses,
+        isLoadingTags = isLoadingTags,
+        currentPage = currentPage,
+        originalMetadata = originalMetadata,
+        resizedMetadata = resizedMetadata,
+        isCalculatingResized = isCalculatingResized,
+        onLogout = onLogout,
+        onPageChanged = { viewModel.onPageChanged(it) },
+        onAddImages = { viewModel.addImages(it) },
+        onShiftLeft = { viewModel.shiftLeft(it) },
+        onShiftRight = { viewModel.shiftRight(it) },
+        onRemoveImage = { viewModel.removeImageAt(it) },
+        onResizeToggled = { viewModel.onResizeToggled(it) },
+        onCaptionChanged = { viewModel.onCaptionChanged(it) },
+        onTagClick = { viewModel.insertTag(it) },
+        onRefreshTags = { viewModel.fetchTags(forceRefresh = true) },
+        onUpload = { viewModel.upload() }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun UploadContent(
+    selectedImageUris: List<Uri>,
+    captionState: TextFieldValue,
+    resizeTo8Mb: Boolean,
+    isUploading: Boolean,
+    statusMessage: String?,
+    isError: Boolean,
+    topTags: List<String>,
+    recentStatuses: List<StatusItem>,
+    isLoadingTags: Boolean,
+    currentPage: Int,
+    originalMetadata: ImageMetadata?,
+    resizedMetadata: ImageMetadata?,
+    isCalculatingResized: Boolean,
+    onLogout: () -> Unit = {},
+    onPageChanged: (Int) -> Unit = {},
+    onAddImages: (List<Uri>) -> Unit = {},
+    onShiftLeft: (Int) -> Unit = {},
+    onShiftRight: (Int) -> Unit = {},
+    onRemoveImage: (Int) -> Unit = {},
+    onResizeToggled: (Boolean) -> Unit = {},
+    onCaptionChanged: (TextFieldValue) -> Unit = {},
+    onTagClick: (String) -> Unit = {},
+    onRefreshTags: () -> Unit = {},
+    onUpload: () -> Unit = {}
+) {
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Upload", "Debug")
 
@@ -56,12 +118,11 @@ fun UploadScreen(
         pageCount = { selectedImageUris.size }
     )
 
-    // Sync PagerState with ViewModel
+    // Sync PagerState with outer currentPage
     LaunchedEffect(pagerState.currentPage) {
-        viewModel.onPageChanged(pagerState.currentPage)
+        onPageChanged(pagerState.currentPage)
     }
 
-    // Sync ViewModel's currentPage back to PagerState if it changes (e.g. on reorder/remove)
     LaunchedEffect(currentPage) {
         if (currentPage != pagerState.currentPage && currentPage < selectedImageUris.size) {
             pagerState.scrollToPage(currentPage)
@@ -71,7 +132,7 @@ fun UploadScreen(
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris ->
-        viewModel.addImages(uris)
+        onAddImages(uris)
     }
 
     Scaffold(
@@ -122,7 +183,7 @@ fun UploadScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         OutlinedButton(
-                            onClick = { viewModel.shiftLeft(currentPage) },
+                            onClick = { onShiftLeft(currentPage) },
                             enabled = currentPage > 0
                         ) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Shift Left")
@@ -131,7 +192,7 @@ fun UploadScreen(
                         }
 
                         OutlinedButton(
-                            onClick = { viewModel.removeImageAt(currentPage) },
+                            onClick = { onRemoveImage(currentPage) },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                         ) {
                             Icon(Icons.Default.Delete, "Remove Photo")
@@ -140,7 +201,7 @@ fun UploadScreen(
                         }
 
                         OutlinedButton(
-                            onClick = { viewModel.shiftRight(currentPage) },
+                            onClick = { onShiftRight(currentPage) },
                             enabled = currentPage < selectedImageUris.size - 1
                         ) {
                             Text("Shift Right")
@@ -155,7 +216,7 @@ fun UploadScreen(
                         selectedImageUris = selectedImageUris,
                         currentPage = currentPage,
                         maxPhotos = maxPhotos,
-                        onImageClick = { index -> viewModel.onPageChanged(index) }
+                        onImageClick = { index -> onPageChanged(index) }
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -178,13 +239,13 @@ fun UploadScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { viewModel.onResizeToggled(!resizeTo8Mb) }
+                        .clickable { onResizeToggled(!resizeTo8Mb) }
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Checkbox(
                         checked = resizeTo8Mb,
-                        onCheckedChange = { viewModel.onResizeToggled(it) }
+                        onCheckedChange = { onResizeToggled(it) }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
@@ -213,7 +274,7 @@ fun UploadScreen(
 
                 OutlinedTextField(
                     value = captionState,
-                    onValueChange = { viewModel.onCaptionChanged(it) },
+                    onValueChange = { onCaptionChanged(it) },
                     label = { Text("Write a caption...") },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -226,8 +287,8 @@ fun UploadScreen(
                 TagSelectionCloud(
                     topTags = topTags,
                     isLoadingTags = isLoadingTags,
-                    onTagClick = { viewModel.insertTag(it) },
-                    onRefreshClick = { viewModel.fetchTags(forceRefresh = true) }
+                    onTagClick = { onTagClick(it) },
+                    onRefreshClick = { onRefreshTags() }
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -242,7 +303,7 @@ fun UploadScreen(
                 }
 
                 Button(
-                    onClick = { viewModel.upload() },
+                    onClick = { onUpload() },
                     enabled = !isUploading && selectedImageUris.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -317,5 +378,27 @@ fun UploadScreen(
                 }
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun UploadScreenPreview() {
+    PixlitTheme {
+        UploadContent(
+            selectedImageUris = listOf(Uri.EMPTY, Uri.EMPTY),
+            captionState = TextFieldValue("Check out my new photos!"),
+            resizeTo8Mb = true,
+            isUploading = false,
+            statusMessage = null,
+            isError = false,
+            topTags = listOf("pixelfed", "android", "kotlin"),
+            recentStatuses = emptyList(),
+            isLoadingTags = false,
+            currentPage = 0,
+            originalMetadata = ImageMetadata(1024 * 1024 * 5, 3000, 2000),
+            resizedMetadata = null,
+            isCalculatingResized = false
+        )
     }
 }

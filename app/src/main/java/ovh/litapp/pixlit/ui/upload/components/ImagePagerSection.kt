@@ -18,8 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
+import ovh.litapp.pixlit.ui.theme.PixlitTheme
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -77,5 +80,31 @@ fun ImagePagerSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Preview(showBackground = true)
+@Composable
+fun ImagePagerSectionPreview() {
+    PixlitTheme {
+        ImagePagerSection(
+            selectedImageUris = listOf(Uri.EMPTY, Uri.EMPTY),
+            pagerState = rememberPagerState(pageCount = { 2 }),
+            modifier = Modifier.padding(16.dp)
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Preview(showBackground = true)
+@Composable
+fun ImagePagerSectionEmptyPreview() {
+    PixlitTheme {
+        ImagePagerSection(
+            selectedImageUris = emptyList(),
+            pagerState = rememberPagerState(pageCount = { 0 }),
+            modifier = Modifier.padding(16.dp)
+        )
     }
 }
