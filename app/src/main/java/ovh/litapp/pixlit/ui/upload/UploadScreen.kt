@@ -31,6 +31,10 @@ import ovh.litapp.pixlit.data.repository.TagCount
 import ovh.litapp.pixlit.ui.theme.PixlitTheme
 import ovh.litapp.pixlit.ui.upload.components.*
 import android.net.Uri
+import android.app.TimePickerDialog
+import ovh.litapp.pixlit.data.reminder.ReminderPreferences
+import ovh.litapp.pixlit.data.reminder.ReminderScheduler
+import java.time.LocalTime
 import ovh.litapp.pixlit.utils.ImageMetadata
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -38,6 +42,11 @@ import ovh.litapp.pixlit.utils.ImageMetadata
 fun UploadScreen(
     repository: PixelfedRepository,
     onLogout: () -> Unit,
+    prefillTheme: String? = null,
+    onPrefillConsumed: () -> Unit = {},
+    reminderPreferences: ReminderPreferences? = null,
+    reminderScheduler: ReminderScheduler? = null,
+    onSimulateNotification: () -> Unit = {},
     viewModel: UploadViewModel = hiltViewModel()
 ) {
     val selectedImageUris by viewModel.selectedImageUris.collectAsState()
@@ -53,6 +62,13 @@ fun UploadScreen(
     val originalMetadata by viewModel.originalMetadata.collectAsState()
     val resizedMetadata by viewModel.resizedMetadata.collectAsState()
     val isCalculatingResized by viewModel.isCalculatingResized.collectAsState()
+
+    LaunchedEffect(prefillTheme) {
+        if (prefillTheme != null) {
+            viewModel.prefillArtShowTags(prefillTheme)
+            onPrefillConsumed()
+        }
+    }
 
     UploadContent(
         selectedImageUris = selectedImageUris,
@@ -78,7 +94,10 @@ fun UploadScreen(
         onCaptionChanged = { viewModel.onCaptionChanged(it) },
         onTagClick = { viewModel.insertTag(it) },
         onRefreshTags = { viewModel.fetchTags(forceRefresh = true) },
-        onUpload = { viewModel.upload() }
+        onUpload = { viewModel.upload() },
+        reminderPreferences = reminderPreferences,
+        reminderScheduler = reminderScheduler,
+        onSimulateNotification = onSimulateNotification
     )
 }
 
@@ -108,10 +127,13 @@ fun UploadContent(
     onCaptionChanged: (TextFieldValue) -> Unit = {},
     onTagClick: (String) -> Unit = {},
     onRefreshTags: () -> Unit = {},
-    onUpload: () -> Unit = {}
+    onUpload: () -> Unit = {},
+    reminderPreferences: ReminderPreferences? = null,
+    reminderScheduler: ReminderScheduler? = null,
+    onSimulateNotification: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Upload", "Debug")
+    val tabs = listOf("Upload", "Debug", "Settings")
 
     val maxPhotos = 6
     val pagerState = rememberPagerState(
@@ -319,7 +341,7 @@ fun UploadContent(
                     }
                 }
             }
-        } else {
+        } else if (selectedTab == 1) {
             // Debug Tab
             Column(
                 modifier = Modifier
@@ -335,6 +357,15 @@ fun UploadContent(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
+
+                Button(
+                    onClick = onSimulateNotification,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Simulate Art Show Notification")
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 if (recentStatuses.isEmpty()) {
                     Box(
@@ -378,6 +409,36 @@ fun UploadContent(
                     }
                 }
             }
+        } else {
+            SettingsContent(reminderPreferences, reminderScheduler, Modifier.padding(padding))
+        }
+    }
+}
+
+@Composable
+private fun SettingsContent(
+    preferences: ReminderPreferences?,
+    scheduler: ReminderScheduler?,
+    modifier: Modifier = Modifier
+) {
+    if (preferences == null || scheduler == null) return
+    var friday by remember { mutableStateOf(preferences.friday) }
+    var saturday by remember { mutableStateOf(preferences.saturday) }
+    Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("BlueSkyArtShow reminders", style = MaterialTheme.typography.headlineSmall)
+        Text("Reminders are always on. Times use your device timezone.", style = MaterialTheme.typography.bodyMedium)
+        ReminderTimeRow("Friday", friday) { time -> friday = time; preferences.friday = time; scheduler.rescheduleAll() }
+        ReminderTimeRow("Saturday", saturday) { time -> saturday = time; preferences.saturday = time; scheduler.rescheduleAll() }
+    }
+}
+
+@Composable
+private fun ReminderTimeRow(label: String, time: LocalTime, onChanged: (LocalTime) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("$label reminder")
+        OutlinedButton(onClick = { TimePickerDialog(context, { _, hour, minute -> onChanged(LocalTime.of(hour, minute)) }, time.hour, time.minute, true).show() }) {
+            Text(String.format("%02d:%02d", time.hour, time.minute))
         }
     }
 }

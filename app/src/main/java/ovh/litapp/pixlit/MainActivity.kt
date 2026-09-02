@@ -2,6 +2,8 @@ package ovh.litapp.pixlit
 
 import android.content.Intent
 import android.os.Bundle
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,6 +21,9 @@ import androidx.compose.ui.Modifier
 import dagger.hilt.android.AndroidEntryPoint
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
+import ovh.litapp.pixlit.data.reminder.ReminderPreferences
+import ovh.litapp.pixlit.data.reminder.ReminderScheduler
+import ovh.litapp.pixlit.data.reminder.ArtShowNotifier
 import ovh.litapp.pixlit.ui.auth.LoginScreen
 import ovh.litapp.pixlit.ui.upload.UploadScreen
 import ovh.litapp.pixlit.ui.theme.PixlitTheme
@@ -29,12 +34,21 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var tokenManager: TokenManager
     @Inject lateinit var repository: PixelfedRepository
+    @Inject lateinit var reminderPreferences: ReminderPreferences
+    @Inject lateinit var reminderScheduler: ReminderScheduler
+    @Inject lateinit var artShowNotifier: ArtShowNotifier
 
     private val viewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
+        }
+        reminderScheduler.scheduleAll()
 
         viewModel.handleIntent(intent)
         val activity = this
@@ -43,6 +57,7 @@ class MainActivity : ComponentActivity() {
             val isLoggedIn by viewModel.isLoggedIn.collectAsState()
             val isAuthProcessing by viewModel.isAuthProcessing.collectAsState()
             val authError by viewModel.authError.collectAsState()
+            val prefillTheme by viewModel.prefillTheme.collectAsState()
 
             PixlitTheme {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -63,7 +78,12 @@ class MainActivity : ComponentActivity() {
                         } else if (isLoggedIn) {
                             UploadScreen(
                                 repository = repository,
-                                onLogout = { viewModel.logout() }
+                                onLogout = { viewModel.logout() },
+                                prefillTheme = prefillTheme,
+                                onPrefillConsumed = { viewModel.consumePrefill() },
+                                reminderPreferences = reminderPreferences,
+                                reminderScheduler = reminderScheduler,
+                                onSimulateNotification = { artShowNotifier.notify("#Minimal", false) }
                             )
                         } else {
                             LoginScreen(

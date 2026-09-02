@@ -205,6 +205,18 @@ class UploadViewModel @Inject constructor(
         )
     }
 
+    fun prefillArtShowTags(theme: String?) {
+        val tags = listOfNotNull("#BlueSkyArtShow", theme?.takeIf { it.isNotBlank() })
+        val text = _captionState.value.text
+        val missing = tags.filter { tag ->
+            Regex("(?i)(?<!\\w)${Regex.escape(tag)}(?!\\w)").containsMatchIn(text).not()
+        }
+        if (missing.isNotEmpty()) {
+            val suffix = missing.joinToString(" ") + " "
+            _captionState.value = TextFieldValue(text + if (text.isBlank()) "" else " " + suffix, TextRange(text.length + if (text.isBlank()) suffix.length else suffix.length + 1))
+        }
+    }
+
     fun upload() {
         val uris = _selectedImageUris.value
         if (uris.isEmpty()) {

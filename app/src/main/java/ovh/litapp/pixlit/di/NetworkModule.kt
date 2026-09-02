@@ -10,6 +10,7 @@ import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import ovh.litapp.pixlit.data.api.PixelfedApi
+import ovh.litapp.pixlit.data.api.BlueskyApi
 import ovh.litapp.pixlit.data.auth.TokenManager
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -35,4 +36,13 @@ object NetworkModule {
             .addInterceptor(logging)
             .build()
     }
+
+    @Provides
+    @Singleton
+    fun provideBlueskyApi(gson: Gson, client: OkHttpClient): BlueskyApi = Retrofit.Builder()
+        .baseUrl("https://public.api.bsky.app/")
+        .client(client)
+        .addConverterFactory(GsonConverterFactory.create(gson))
+        .build()
+        .create(BlueskyApi::class.java)
 }

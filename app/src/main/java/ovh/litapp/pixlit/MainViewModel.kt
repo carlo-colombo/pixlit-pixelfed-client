@@ -31,7 +31,13 @@ class MainViewModel @Inject constructor(
     private val _authError = MutableStateFlow<String?>(null)
     val authError: StateFlow<String?> = _authError.asStateFlow()
 
+    private val _prefillTheme = MutableStateFlow<String?>(null)
+    val prefillTheme: StateFlow<String?> = _prefillTheme.asStateFlow()
+
     fun handleIntent(intent: Intent?) {
+        if (runCatching { intent?.getBooleanExtra("prefill", false) }.getOrDefault(false) == true) {
+            _prefillTheme.value = runCatching { intent?.getStringExtra("theme") }.getOrNull() ?: ""
+        }
         val uri = intent?.data
         val redirectUri = context.getString(R.string.redirect_uri)
         val scheme = redirectUri.split("://").first()
@@ -65,6 +71,8 @@ class MainViewModel @Inject constructor(
             }
         }
     }
+
+    fun consumePrefill() { _prefillTheme.value = null }
 
     fun logout() {
         tokenManager.clear()
