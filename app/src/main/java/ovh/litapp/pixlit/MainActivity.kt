@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
             val isAuthProcessing by viewModel.isAuthProcessing.collectAsState()
             val authError by viewModel.authError.collectAsState()
             val prefillTheme by viewModel.prefillTheme.collectAsState()
+            val sharedImageUris by viewModel.sharedImageUris.collectAsState()
 
             PixlitTheme {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -81,6 +82,8 @@ class MainActivity : ComponentActivity() {
                                 onLogout = { viewModel.logout() },
                                 prefillTheme = prefillTheme,
                                 onPrefillConsumed = { viewModel.consumePrefill() },
+                                sharedImageUris = sharedImageUris,
+                                onSharedImageUrisConsumed = { viewModel.consumeSharedImageUris() },
                                 reminderPreferences = reminderPreferences,
                                 reminderScheduler = reminderScheduler,
                                 onSimulateNotification = { artShowNotifier.notify("#Minimal", false) }

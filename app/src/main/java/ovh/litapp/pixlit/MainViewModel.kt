@@ -2,7 +2,9 @@ package ovh.litapp.pixlit
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -34,7 +36,29 @@ class MainViewModel @Inject constructor(
     private val _prefillTheme = MutableStateFlow<String?>(null)
     val prefillTheme: StateFlow<String?> = _prefillTheme.asStateFlow()
 
+    private val _sharedImageUris = MutableStateFlow<List<Uri>>(emptyList())
+    val sharedImageUris: StateFlow<List<Uri>> = _sharedImageUris.asStateFlow()
+
     fun handleIntent(intent: Intent?) {
+        val action = intent?.action
+        val type = intent?.type
+
+        if (action == Intent.ACTION_SEND && (type == null || type.startsWith("image/"))) {
+            val uri = runCatching {
+                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            }.getOrNull()
+            if (uri != null) {
+                _sharedImageUris.value = listOf(uri)
+            }
+        } else if (action == Intent.ACTION_SEND_MULTIPLE && (type == null || type.startsWith("image/"))) {
+            val uris = runCatching {
+                IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            }.getOrNull()
+            if (!uris.isNullOrEmpty()) {
+                _sharedImageUris.value = uris.filterNotNull()
+            }
+        }
+
         if (runCatching { intent?.getBooleanExtra("prefill", false) }.getOrDefault(false) == true) {
             _prefillTheme.value = runCatching { intent?.getStringExtra("theme") }.getOrNull() ?: ""
         }
@@ -73,6 +97,8 @@ class MainViewModel @Inject constructor(
     }
 
     fun consumePrefill() { _prefillTheme.value = null }
+
+    fun consumeSharedImageUris() { _sharedImageUris.value = emptyList() }
 
     fun logout() {
         tokenManager.clear()

@@ -44,7 +44,7 @@ class MainViewModelTest {
 
     @Test
     fun `handleIntent with valid code updates isLoggedIn`() = runTest {
-        val intent = mockk<Intent>()
+        val intent = mockk<Intent>(relaxed = true)
         val uri = mockk<Uri>()
         every { intent.data } returns uri
         every { uri.scheme } returns "pixelfed-app"
@@ -68,5 +68,40 @@ class MainViewModelTest {
         
         verify { tokenManager.clear() }
         assertEquals(false, viewModel.isLoggedIn.value)
+    }
+
+    @Test
+    fun `handleIntent with ACTION_SEND single image updates sharedImageUris`() = runTest {
+        val intent = mockk<Intent>()
+        val photoUri = mockk<Uri>()
+        every { intent.action } returns Intent.ACTION_SEND
+        every { intent.type } returns "image/jpeg"
+        every { intent.data } returns null
+        every { intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) } returns photoUri
+        every { intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java) } returns photoUri
+
+        viewModel.handleIntent(intent)
+
+        assertEquals(listOf(photoUri), viewModel.sharedImageUris.value)
+
+        viewModel.consumeSharedImageUris()
+        assertTrue(viewModel.sharedImageUris.value.isEmpty())
+    }
+
+    @Test
+    fun `handleIntent with ACTION_SEND_MULTIPLE images updates sharedImageUris`() = runTest {
+        val intent = mockk<Intent>()
+        val photoUri1 = mockk<Uri>()
+        val photoUri2 = mockk<Uri>()
+        val uriList = arrayListOf(photoUri1, photoUri2)
+        every { intent.action } returns Intent.ACTION_SEND_MULTIPLE
+        every { intent.type } returns "image/*"
+        every { intent.data } returns null
+        every { intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM) } returns uriList
+        every { intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java) } returns uriList
+
+        viewModel.handleIntent(intent)
+
+        assertEquals(listOf(photoUri1, photoUri2), viewModel.sharedImageUris.value)
     }
 }
