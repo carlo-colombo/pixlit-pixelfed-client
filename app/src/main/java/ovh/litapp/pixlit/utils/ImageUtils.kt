@@ -3,6 +3,8 @@ package ovh.litapp.pixlit.utils
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import androidx.exifinterface.media.ExifInterface
 import android.net.Uri
 import android.provider.OpenableColumns
 import java.io.File
@@ -54,7 +56,21 @@ object ImageUtils {
         }
         BitmapFactory.decodeFile(file.absolutePath, options)
         if (options.outWidth <= 0 || options.outHeight <= 0) return null
-        return ImageMetadata(sizeBytes, options.outWidth, options.outHeight)
+
+        val orientation = try {
+            val exif = ExifInterface(file.absolutePath)
+            exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } catch (e: Exception) {
+            ExifInterface.ORIENTATION_NORMAL
+        }
+
+        val (w, h) = if (isSwappedDimensions(orientation)) {
+            Pair(options.outHeight, options.outWidth)
+        } else {
+            Pair(options.outWidth, options.outHeight)
+        }
+
+        return ImageMetadata(sizeBytes, w, h)
     }
 
     private fun getFileSize(context: Context, uri: Uri): Long? {
@@ -97,13 +113,70 @@ object ImageUtils {
                 BitmapFactory.decodeStream(stream, null, options)
             }
             if (options.outWidth > 0 && options.outHeight > 0) {
-                Pair(options.outWidth, options.outHeight)
+                val orientation = getExifOrientation(context, uri)
+                if (isSwappedDimensions(orientation)) {
+                    Pair(options.outHeight, options.outWidth)
+                } else {
+                    Pair(options.outWidth, options.outHeight)
+                }
             } else {
                 null
             }
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        }
+    }
+
+    private fun getExifOrientation(context: Context, uri: Uri): Int {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                val exif = ExifInterface(stream)
+                exif.getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL
+                )
+            } ?: ExifInterface.ORIENTATION_NORMAL
+        } catch (e: Exception) {
+            e.printStackTrace()
+            ExifInterface.ORIENTATION_NORMAL
+        }
+    }
+
+    private fun isSwappedDimensions(orientation: Int): Boolean {
+        return orientation == ExifInterface.ORIENTATION_ROTATE_90 ||
+                orientation == ExifInterface.ORIENTATION_ROTATE_270 ||
+                orientation == ExifInterface.ORIENTATION_TRANSPOSE ||
+                orientation == ExifInterface.ORIENTATION_TRANSVERSE
+    }
+
+    private fun rotateBitmap(bitmap: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> {
+                matrix.postRotate(90f)
+                matrix.postScale(-1f, 1f)
+            }
+            ExifInterface.ORIENTATION_TRANSVERSE -> {
+                matrix.postRotate(270f)
+                matrix.postScale(-1f, 1f)
+            }
+            else -> return bitmap
+        }
+        return try {
+            val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            if (rotated != bitmap) {
+                bitmap.recycle()
+            }
+            rotated
+        } catch (e: Exception) {
+            e.printStackTrace()
+            bitmap
         }
     }
 
@@ -179,6 +252,9 @@ object ImageUtils {
         reqHeight: Int
     ): Bitmap? {
         return try {
+            val orientation = getExifOrientation(context, uri)
+            val swapped = isSwappedDimensions(orientation)
+
             val options = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
@@ -186,12 +262,17 @@ object ImageUtils {
                 BitmapFactory.decodeStream(stream, null, options)
             }
 
-            options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+            val rawReqWidth = if (swapped) reqHeight else reqWidth
+            val rawReqHeight = if (swapped) reqWidth else reqHeight
+
+            options.inSampleSize = calculateInSampleSize(options, rawReqWidth, rawReqHeight)
             options.inJustDecodeBounds = false
 
-            context.contentResolver.openInputStream(uri)?.use { stream ->
+            val decodedBitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
                 BitmapFactory.decodeStream(stream, null, options)
-            }
+            } ?: return null
+
+            rotateBitmap(decodedBitmap, orientation)
         } catch (e: Exception) {
             e.printStackTrace()
             null
