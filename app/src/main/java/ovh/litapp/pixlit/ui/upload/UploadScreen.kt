@@ -36,6 +36,7 @@ import ovh.litapp.pixlit.data.reminder.ReminderPreferences
 import ovh.litapp.pixlit.data.reminder.ReminderScheduler
 import java.time.LocalTime
 import ovh.litapp.pixlit.utils.ImageMetadata
+import ovh.litapp.pixlit.ui.social.SocialScreen
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -93,6 +94,7 @@ fun UploadScreen(
         onResizeToggled = { viewModel.onResizeToggled(it) },
         onCaptionChanged = { viewModel.onCaptionChanged(it) },
         onTagClick = { viewModel.insertTag(it) },
+        onSocialTagClick = { tags -> tags.forEach(viewModel::insertTag) },
         onRefreshTags = { viewModel.fetchTags(forceRefresh = true) },
         onUpload = { viewModel.upload() },
         reminderPreferences = reminderPreferences,
@@ -126,6 +128,7 @@ fun UploadContent(
     onResizeToggled: (Boolean) -> Unit = {},
     onCaptionChanged: (TextFieldValue) -> Unit = {},
     onTagClick: (String) -> Unit = {},
+    onSocialTagClick: (List<String>) -> Unit = {},
     onRefreshTags: () -> Unit = {},
     onUpload: () -> Unit = {},
     reminderPreferences: ReminderPreferences? = null,
@@ -133,7 +136,7 @@ fun UploadContent(
     onSimulateNotification: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Upload", "Debug", "Settings")
+    val tabs = listOf("Upload", "Social", "Debug", "Settings")
 
     val maxPhotos = 6
     val pagerState = rememberPagerState(
@@ -342,6 +345,14 @@ fun UploadContent(
                 }
             }
         } else if (selectedTab == 1) {
+            SocialScreen(
+                onTagClick = {
+                    onSocialTagClick(it)
+                    selectedTab = 0
+                },
+                modifier = Modifier.padding(padding)
+            )
+        } else if (selectedTab == 2) {
             // Debug Tab
             Column(
                 modifier = Modifier
