@@ -47,6 +47,23 @@ jobs:
       - name: Set Up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Set Build Config
+        id: build_config
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "FLAVOR=dev" >> $GITHUB_ENV
+            echo "ASSEMBLE_TASK=assembleDevRelease" >> $GITHUB_ENV
+            echo "RELEASE_DIR=app/build/outputs/apk/dev/release" >> $GITHUB_ENV
+            echo "APK_PREFIX=app-dev-release" >> $GITHUB_ENV
+            echo "release_dir=app/build/outputs/apk/dev/release" >> $GITHUB_OUTPUT
+          else
+            echo "FLAVOR=prod" >> $GITHUB_ENV
+            echo "ASSEMBLE_TASK=assembleProdRelease" >> $GITHUB_ENV
+            echo "RELEASE_DIR=app/build/outputs/apk/prod/release" >> $GITHUB_ENV
+            echo "APK_PREFIX=app-prod-release" >> $GITHUB_ENV
+            echo "release_dir=app/build/outputs/apk/prod/release" >> $GITHUB_OUTPUT
+          fi
+
       - name: Assemble APK
         run: |
           TAG_VERSION="${{ steps.bump_and_tag.outputs.new_tag }}"
@@ -55,13 +72,13 @@ jobs:
           fi
           ./gradlew \
             -Pandroid.versionName="$TAG_VERSION" \
-            assembleProdRelease
+            "${ASSEMBLE_TASK}"
 
       - name: Sign Android release
         id: sign_app
         uses: r0adkll/sign-android-release@d5f8436b702872ad5cdb1e6e4d5c8b983d25a997
         with:
-          releaseDirectory: app/build/outputs/apk/prod/release
+          releaseDirectory: ${{ steps.build_config.outputs.release_dir }}
           signingKeyBase64: ${{ secrets.SIGNING_KEY }}
           alias: ${{ secrets.ALIAS || 'key' }}
           keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD || 'password' }}
@@ -74,10 +91,10 @@ jobs:
           if [ -z "$TAG_VERSION" ]; then
             TAG_VERSION="1.0.0-pr-${{ github.run_number }}"
           fi
-          if [ -f app/build/outputs/apk/prod/release/app-prod-release-unsigned-signed.apk ]; then
-            cp app/build/outputs/apk/prod/release/app-prod-release-unsigned-signed.apk pixelfed-client-${TAG_VERSION}.apk
+          if [ -f "${RELEASE_DIR}/${APK_PREFIX}-unsigned-signed.apk" ]; then
+            cp "${RELEASE_DIR}/${APK_PREFIX}-unsigned-signed.apk" "pixelfed-client-${TAG_VERSION}.apk"
           else
-            cp app/build/outputs/apk/prod/release/app-prod-release-unsigned.apk pixelfed-client-${TAG_VERSION}.apk
+            cp "${RELEASE_DIR}/${APK_PREFIX}-unsigned.apk" "pixelfed-client-${TAG_VERSION}.apk"
           fi
 
       - name: Upload APK Artifact (PR & Main)
