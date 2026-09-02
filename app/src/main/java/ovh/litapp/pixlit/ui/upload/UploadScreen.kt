@@ -45,6 +45,8 @@ fun UploadScreen(
     onLogout: () -> Unit,
     prefillTheme: String? = null,
     onPrefillConsumed: () -> Unit = {},
+    sharedImageUris: List<Uri> = emptyList(),
+    onSharedImageUrisConsumed: () -> Unit = {},
     reminderPreferences: ReminderPreferences? = null,
     reminderScheduler: ReminderScheduler? = null,
     onSimulateNotification: () -> Unit = {},
@@ -68,6 +70,13 @@ fun UploadScreen(
         if (prefillTheme != null) {
             viewModel.prefillArtShowTags(prefillTheme)
             onPrefillConsumed()
+        }
+    }
+
+    LaunchedEffect(sharedImageUris) {
+        if (sharedImageUris.isNotEmpty()) {
+            viewModel.addImages(sharedImageUris)
+            onSharedImageUrisConsumed()
         }
     }
 
