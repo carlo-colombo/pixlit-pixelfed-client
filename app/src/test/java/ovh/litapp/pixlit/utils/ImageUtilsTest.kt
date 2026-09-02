@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import androidx.exifinterface.media.ExifInterface
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.*
@@ -111,5 +112,30 @@ class ImageUtilsTest {
         val resizedMetadata = ImageUtils.getFileMetadata(resizedFile)!!
         assertTrue(resizedMetadata.width < originalMetadata.width)
         assertTrue(resizedMetadata.height < originalMetadata.height)
+    }
+
+    @Test
+    fun testExifOrientationDimensionsAndResize() {
+        // Create an image where raw pixel dims are 2000x1000 (landscape), but EXIF orientation is ROTATE_90 (vertical/portrait)
+        val file = createTestImageFile(2000, 1000, "vertical_exif.jpg")
+        val exif = ExifInterface(file.absolutePath)
+        exif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
+        exif.saveAttributes()
+
+        val uri = Uri.fromFile(file)
+        val metadata = ImageUtils.getImageMetadata(context, uri)
+        assertNotNull(metadata)
+        // Visually, swapped dimensions should make it 1000x2000 (portrait)
+        assertEquals(1000, metadata!!.width)
+        assertEquals(2000, metadata.height)
+
+        val customMaxBytes = 50 * 1024L // 50 KB
+        val resizedFile = ImageUtils.resizeImageDownToMaxBytes(context, uri, maxSizeBytes = customMaxBytes)
+        assertNotNull(resizedFile)
+
+        val resizedMetadata = ImageUtils.getFileMetadata(resizedFile!!)
+        assertNotNull(resizedMetadata)
+        // Resized bitmap should be rotated to portrait (height > width)
+        assertTrue(resizedMetadata!!.height > resizedMetadata.width)
     }
 }

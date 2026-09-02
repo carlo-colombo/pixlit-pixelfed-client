@@ -48,7 +48,7 @@ fun ImagePagerSection(
                     painter = rememberAsyncImagePainter(selectedImageUris[page]),
                     contentDescription = "Selected Photo ${page + 1}",
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Fit
                 )
             }
 

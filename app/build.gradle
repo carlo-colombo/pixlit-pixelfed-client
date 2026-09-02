@@ -92,6 +92,7 @@ dependencies {
     implementation libs.androidx.material.icons.core
     implementation libs.androidx.material.icons.extended
     implementation libs.androidx.browser
+    implementation libs.androidx.exifinterface
 
     // OkHttp & Retrofit
     implementation libs.okhttp
