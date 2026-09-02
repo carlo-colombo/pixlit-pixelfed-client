@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ovh.litapp.pixlit.data.api.CollectionItem
 import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.utils.ImageMetadata
@@ -52,6 +53,15 @@ class UploadViewModel @Inject constructor(
     private val _isLoadingTags = MutableStateFlow(false)
     val isLoadingTags = _isLoadingTags.asStateFlow()
 
+    private val _userCollections = MutableStateFlow<List<CollectionItem>>(repository.getDefaultStaticCollections())
+    val userCollections = _userCollections.asStateFlow()
+
+    private val _selectedCollectionIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedCollectionIds = _selectedCollectionIds.asStateFlow()
+
+    private val _isLoadingCollections = MutableStateFlow(false)
+    val isLoadingCollections = _isLoadingCollections.asStateFlow()
+
     private val _currentPage = MutableStateFlow(0)
     val currentPage = _currentPage.asStateFlow()
 
@@ -66,6 +76,7 @@ class UploadViewModel @Inject constructor(
 
     init {
         fetchTags()
+        fetchCollections()
 
         // Sync metadata when current page or URIs or resize setting changes
         combine(
@@ -102,6 +113,54 @@ class UploadViewModel @Inject constructor(
             } else {
                 _resizedMetadata.value = null
             }
+        }
+    }
+
+    fun fetchCollections() {
+        viewModelScope.launch {
+            _isLoadingCollections.value = true
+            val result = repository.getUserCollections()
+            result.fold(
+                onSuccess = { collections ->
+                    _userCollections.value = if (collections.isNotEmpty()) collections else repository.getDefaultStaticCollections()
+                },
+                onFailure = { ex ->
+                    Log.e("UploadViewModel", "fetchCollections failure", ex)
+                    _userCollections.value = repository.getDefaultStaticCollections()
+                }
+            )
+            _isLoadingCollections.value = false
+        }
+    }
+
+    fun toggleCollectionSelection(collectionId: String) {
+        val current = _selectedCollectionIds.value.toMutableSet()
+        if (current.contains(collectionId)) {
+            current.remove(collectionId)
+        } else {
+            current.add(collectionId)
+        }
+        _selectedCollectionIds.value = current
+    }
+
+    fun createAndSelectCollection(title: String, description: String? = null) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            val result = repository.createCollection(title.trim(), description?.trim())
+            result.fold(
+                onSuccess = { newCollection ->
+                    val id = newCollection.getIdString()
+                    val currentCollections = _userCollections.value.toMutableList()
+                    if (id != null && currentCollections.none { it.getIdString() == id }) {
+                        currentCollections.add(0, newCollection)
+                        _userCollections.value = currentCollections
+                        toggleCollectionSelection(id)
+                    }
+                },
+                onFailure = { ex ->
+                    Log.e("UploadViewModel", "createCollection failure", ex)
+                }
+            )
         }
     }
 
@@ -230,18 +289,24 @@ class UploadViewModel @Inject constructor(
         _isError.value = false
 
         viewModelScope.launch {
+            val collectionsToAssign = _selectedCollectionIds.value.toList()
             val result = repository.uploadPhotosAndCreateStatus(
                 imageUris = uris,
                 caption = _captionState.value.text,
-                resizeTo8Mb = _resizeTo8Mb.value
+                resizeTo8Mb = _resizeTo8Mb.value,
+                collectionIds = collectionsToAssign
             )
             _isUploading.value = false
             result.fold(
                 onSuccess = {
-                    _statusMessage.value = "Successfully uploaded ${uris.size} photo(s) to Pixlit!"
+                    val collectionsMsg = if (collectionsToAssign.isNotEmpty()) {
+                        " and added to ${collectionsToAssign.size} collection(s)"
+                    } else ""
+                    _statusMessage.value = "Successfully uploaded ${uris.size} photo(s)$collectionsMsg!"
                     _isError.value = false
                     _selectedImageUris.value = emptyList()
                     _captionState.value = TextFieldValue("")
+                    _selectedCollectionIds.value = emptySet()
                 },
                 onFailure = { ex ->
                     val msg = ex.localizedMessage ?: ex.message ?: ex.toString()

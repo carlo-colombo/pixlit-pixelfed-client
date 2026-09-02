@@ -64,6 +64,29 @@ interface PixelfedApi {
         @Field("status") status: String,
         @Field("media_ids[]") mediaIds: List<String>
     ): Response<StatusResponse>
+
+    @GET("api/pixelfed/v1/accounts/{id}/collections")
+    suspend fun getUserCollections(
+        @Header("Authorization") authHeader: String,
+        @Path("id") accountId: String
+    ): Response<List<CollectionItem>>
+
+    @FormUrlEncoded
+    @POST("api/pixelfed/v1/collections/{id}/items")
+    suspend fun addStatusToCollection(
+        @Header("Authorization") authHeader: String,
+        @Path("id") collectionId: String,
+        @Field("status_id") statusId: String
+    ): Response<okhttp3.ResponseBody>
+
+    @FormUrlEncoded
+    @POST("api/pixelfed/v1/collections")
+    suspend fun createCollection(
+        @Header("Authorization") authHeader: String,
+        @Field("title") title: String,
+        @Field("description") description: String? = null,
+        @Field("visibility") visibility: String = "public"
+    ): Response<CollectionItem>
 }
 
 fun JsonElement?.toSafeString(): String? {
@@ -109,6 +132,20 @@ data class MediaResponse(
     @SerializedName("preview_url") val previewUrl: JsonElement? = null
 ) {
     fun getIdString(): String? = id.toSafeString()
+}
+
+data class CollectionItem(
+    @SerializedName("id") val id: JsonElement? = null,
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("description") val description: String? = null,
+    @SerializedName("visibility") val visibility: String? = null,
+    @SerializedName("posts_count") val postsCount: Int? = null
+) {
+    fun getIdString(): String? = id.toSafeString()
+    fun getDisplayName(): String = title?.takeIf { it.isNotBlank() }
+        ?: name?.takeIf { it.isNotBlank() }
+        ?: "Untitled Collection"
 }
 
 data class AccountResponse(

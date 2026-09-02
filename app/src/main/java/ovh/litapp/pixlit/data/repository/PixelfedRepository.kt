@@ -3,6 +3,7 @@ package ovh.litapp.pixlit.data.repository
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import ovh.litapp.pixlit.data.api.CollectionItem
 import ovh.litapp.pixlit.data.api.PixelfedApi
 import ovh.litapp.pixlit.data.api.StatusResponse
 import ovh.litapp.pixlit.data.api.StatusItem
@@ -157,15 +158,17 @@ class PixelfedRepository @Inject constructor(
     suspend fun uploadPhotoAndCreateStatus(
         imageUri: Uri,
         caption: String,
-        resizeTo8Mb: Boolean = false
+        resizeTo8Mb: Boolean = false,
+        collectionIds: List<String> = emptyList()
     ): Result<StatusResponse> {
-        return uploadPhotosAndCreateStatus(listOf(imageUri), caption, resizeTo8Mb)
+        return uploadPhotosAndCreateStatus(listOf(imageUri), caption, resizeTo8Mb, collectionIds)
     }
 
     suspend fun uploadPhotosAndCreateStatus(
         imageUris: List<Uri>,
         caption: String,
-        resizeTo8Mb: Boolean = false
+        resizeTo8Mb: Boolean = false,
+        collectionIds: List<String> = emptyList()
     ): Result<StatusResponse> = withContext(Dispatchers.IO) {
         if (imageUris.isEmpty()) {
             return@withContext Result.failure(Exception("No images selected for upload"))
@@ -212,7 +215,22 @@ class PixelfedRepository @Inject constructor(
             )
 
             if (statusResponse.isSuccessful && statusResponse.body() != null) {
-                Result.success(statusResponse.body()!!)
+                val createdStatus = statusResponse.body()!!
+                val statusId = createdStatus.getIdString()
+                if (!statusId.isNullOrBlank() && collectionIds.isNotEmpty()) {
+                    for (collectionId in collectionIds) {
+                        try {
+                            api.addStatusToCollection(
+                                authHeader = "Bearer $accessToken",
+                                collectionId = collectionId,
+                                statusId = statusId
+                            )
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to add status $statusId to collection $collectionId", e)
+                        }
+                    }
+                }
+                Result.success(createdStatus)
             } else {
                 Result.failure(Exception("Status creation failed: ${statusResponse.code()} ${statusResponse.errorBody()?.string()}"))
             }
@@ -256,6 +274,90 @@ class PixelfedRepository @Inject constructor(
 
     fun getDefaultStaticTagCounts(): List<TagCount> {
         return extractTopTagCountsFromStatuses(getStaticStatuses(), topCount = MAX_DISPLAYED_TAGS)
+    }
+
+    fun getDefaultStaticCollections(): List<CollectionItem> {
+        return listOf(
+            CollectionItem(id = com.google.gson.JsonPrimitive("static_1"), title = "Portfolio"),
+            CollectionItem(id = com.google.gson.JsonPrimitive("static_2"), title = "Travel"),
+            CollectionItem(id = com.google.gson.JsonPrimitive("static_3"), title = "Favorites"),
+            CollectionItem(id = com.google.gson.JsonPrimitive("static_4"), title = "Art & Design")
+        )
+    }
+
+    suspend fun getUserCollections(): Result<List<CollectionItem>> = withContext(Dispatchers.IO) {
+        val instanceUrl = tokenManager.instanceUrl
+        val accessToken = tokenManager.accessToken
+
+        if (instanceUrl.isNullOrBlank() || accessToken.isNullOrBlank()) {
+            return@withContext Result.success(getDefaultStaticCollections())
+        }
+
+        try {
+            val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
+            val authHeader = "Bearer $accessToken"
+            val verifyResp = api.verifyCredentials(authHeader)
+            if (verifyResp.isSuccessful) {
+                val accountId = verifyResp.body()?.getIdString()
+                if (!accountId.isNullOrBlank()) {
+                    val collectionsResp = api.getUserCollections(authHeader, accountId)
+                    if (collectionsResp.isSuccessful && collectionsResp.body() != null) {
+                        val collections = collectionsResp.body()!!
+                        return@withContext Result.success(if (collections.isNotEmpty()) collections else getDefaultStaticCollections())
+                    }
+                }
+            }
+            Result.success(getDefaultStaticCollections())
+        } catch (e: Exception) {
+            Log.e(TAG, "getUserCollections failed, falling back to static collections", e)
+            Result.success(getDefaultStaticCollections())
+        }
+    }
+
+    suspend fun createCollection(
+        title: String,
+        description: String? = null,
+        visibility: String = "public"
+    ): Result<CollectionItem> = withContext(Dispatchers.IO) {
+        val instanceUrl = tokenManager.instanceUrl
+        val accessToken = tokenManager.accessToken
+
+        if (instanceUrl.isNullOrBlank() || accessToken.isNullOrBlank()) {
+            val localId = "local_${System.currentTimeMillis()}"
+            val newItem = CollectionItem(
+                id = com.google.gson.JsonPrimitive(localId),
+                title = title,
+                description = description,
+                visibility = visibility
+            )
+            return@withContext Result.success(newItem)
+        }
+
+        try {
+            val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
+            val authHeader = "Bearer $accessToken"
+            val response = api.createCollection(authHeader, title, description, visibility)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                val localId = "local_${System.currentTimeMillis()}"
+                Result.success(CollectionItem(
+                    id = com.google.gson.JsonPrimitive(localId),
+                    title = title,
+                    description = description,
+                    visibility = visibility
+                ))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "createCollection failed, creating local fallback collection", e)
+            val localId = "local_${System.currentTimeMillis()}"
+            Result.success(CollectionItem(
+                id = com.google.gson.JsonPrimitive(localId),
+                title = title,
+                description = description,
+                visibility = visibility
+            ))
+        }
     }
 
     suspend fun getUserTopTagsAndPosts(forceRefresh: Boolean = false): Result<TagsAndPosts> = withContext(Dispatchers.IO) {

@@ -24,6 +24,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import ovh.litapp.pixlit.data.api.CollectionItem
 import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.data.api.toSafeString
@@ -65,6 +66,9 @@ fun UploadScreen(
     val originalMetadata by viewModel.originalMetadata.collectAsState()
     val resizedMetadata by viewModel.resizedMetadata.collectAsState()
     val isCalculatingResized by viewModel.isCalculatingResized.collectAsState()
+    val userCollections by viewModel.userCollections.collectAsState()
+    val selectedCollectionIds by viewModel.selectedCollectionIds.collectAsState()
+    val isLoadingCollections by viewModel.isLoadingCollections.collectAsState()
 
     LaunchedEffect(prefillTheme) {
         if (prefillTheme != null) {
@@ -94,7 +98,12 @@ fun UploadScreen(
         originalMetadata = originalMetadata,
         resizedMetadata = resizedMetadata,
         isCalculatingResized = isCalculatingResized,
+        userCollections = userCollections,
+        selectedCollectionIds = selectedCollectionIds,
+        isLoadingCollections = isLoadingCollections,
         onLogout = onLogout,
+        onCollectionToggle = { viewModel.toggleCollectionSelection(it) },
+        onCreateCollection = { title, desc -> viewModel.createAndSelectCollection(title, desc) },
         onPageChanged = { viewModel.onPageChanged(it) },
         onAddImages = { viewModel.addImages(it) },
         onShiftLeft = { viewModel.shiftLeft(it) },
@@ -128,7 +137,12 @@ fun UploadContent(
     originalMetadata: ImageMetadata?,
     resizedMetadata: ImageMetadata?,
     isCalculatingResized: Boolean,
+    userCollections: List<CollectionItem> = emptyList(),
+    selectedCollectionIds: Set<String> = emptySet(),
+    isLoadingCollections: Boolean = false,
     onLogout: () -> Unit = {},
+    onCollectionToggle: (String) -> Unit = {},
+    onCreateCollection: (String, String?) -> Unit = { _, _ -> },
     onPageChanged: (Int) -> Unit = {},
     onAddImages: (List<Uri>) -> Unit = {},
     onShiftLeft: (Int) -> Unit = {},
@@ -324,6 +338,16 @@ fun UploadContent(
                     isLoadingTags = isLoadingTags,
                     onTagClick = { onTagClick(it) },
                     onRefreshClick = { onRefreshTags() }
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                CollectionSelectionSection(
+                    collections = userCollections,
+                    selectedCollectionIds = selectedCollectionIds,
+                    isLoadingCollections = isLoadingCollections,
+                    onCollectionToggle = onCollectionToggle,
+                    onCreateCollection = onCreateCollection
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))

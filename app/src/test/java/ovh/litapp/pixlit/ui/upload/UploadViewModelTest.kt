@@ -4,9 +4,13 @@ import android.content.Context
 import android.net.Uri
 import app.cash.turbine.test
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
+import ovh.litapp.pixlit.data.api.CollectionItem
+import ovh.litapp.pixlit.data.api.StatusResponse
+import com.google.gson.JsonPrimitive
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.*
 import org.junit.After
@@ -29,6 +33,10 @@ class UploadViewModelTest {
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         every { repository.getDefaultStaticTags() } returns listOf("#tag1", "#tag2")
+        every { repository.getDefaultStaticCollections() } returns listOf(
+            CollectionItem(id = JsonPrimitive("col1"), title = "Collection 1"),
+            CollectionItem(id = JsonPrimitive("col2"), title = "Collection 2")
+        )
         coEvery { repository.getUserTopTagsAndPosts(any()) } answers {
             Result.success(
                 PixelfedRepository.TagsAndPosts(
@@ -40,6 +48,12 @@ class UploadViewModelTest {
                 )
             )
         }
+        coEvery { repository.getUserCollections() } returns Result.success(
+            listOf(
+                CollectionItem(id = JsonPrimitive("col1"), title = "Collection 1"),
+                CollectionItem(id = JsonPrimitive("col2"), title = "Collection 2")
+            )
+        )
         viewModel = UploadViewModel(context, repository)
     }
 
@@ -91,5 +105,69 @@ class UploadViewModelTest {
     fun `insertTag updates caption correctly`() = runTest {
         viewModel.insertTag("#photography (12)")
         assertEquals("#photography ", viewModel.captionState.value.text)
+    }
+
+    @Test
+    fun `toggleCollectionSelection allows selecting 0 1 or multiple collections`() = runTest {
+        // Initially 0 collections selected
+        assertEquals(emptySet<String>(), viewModel.selectedCollectionIds.value)
+
+        // Select 1 collection
+        viewModel.toggleCollectionSelection("col1")
+        assertEquals(setOf("col1"), viewModel.selectedCollectionIds.value)
+
+        // Select second collection (multiple)
+        viewModel.toggleCollectionSelection("col2")
+        assertEquals(setOf("col1", "col2"), viewModel.selectedCollectionIds.value)
+
+        // Deselect col1
+        viewModel.toggleCollectionSelection("col1")
+        assertEquals(setOf("col2"), viewModel.selectedCollectionIds.value)
+
+        // Deselect col2 -> back to 0 collections
+        viewModel.toggleCollectionSelection("col2")
+        assertEquals(emptySet<String>(), viewModel.selectedCollectionIds.value)
+    }
+
+    @Test
+    fun `createAndSelectCollection creates and selects new collection`() = runTest {
+        val newCol = CollectionItem(id = JsonPrimitive("new_1"), title = "Architecture")
+        coEvery { repository.createCollection("Architecture", null) } returns Result.success(newCol)
+
+        viewModel.createAndSelectCollection("Architecture")
+        advanceUntilIdle()
+
+        assert(viewModel.selectedCollectionIds.value.contains("new_1"))
+        assert(viewModel.userCollections.value.any { it.getIdString() == "new_1" })
+    }
+
+    @Test
+    fun `upload passes selected collection IDs to repository`() = runTest {
+        val uri1 = mockk<Uri>(relaxed = true)
+        viewModel.addImages(listOf(uri1))
+        viewModel.toggleCollectionSelection("col1")
+        viewModel.toggleCollectionSelection("col2")
+
+        coEvery {
+            repository.uploadPhotosAndCreateStatus(
+                imageUris = any(),
+                caption = any(),
+                resizeTo8Mb = any(),
+                collectionIds = any()
+            )
+        } returns Result.success(StatusResponse(id = JsonPrimitive("123")))
+
+        viewModel.upload()
+        advanceUntilIdle()
+
+        coVerify {
+            repository.uploadPhotosAndCreateStatus(
+                imageUris = listOf(uri1),
+                caption = "",
+                resizeTo8Mb = false,
+                collectionIds = match { it.containsAll(listOf("col1", "col2")) && it.size == 2 }
+            )
+        }
+        assertEquals(emptySet<String>(), viewModel.selectedCollectionIds.value)
     }
 }
