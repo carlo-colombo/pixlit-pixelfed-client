@@ -9,6 +9,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import ovh.litapp.pixlit.data.api.CollectionItem
+import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.api.StatusResponse
 import com.google.gson.JsonPrimitive
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -169,5 +170,23 @@ class UploadViewModelTest {
             )
         }
         assertEquals(emptySet<String>(), viewModel.selectedCollectionIds.value)
+    }
+
+    @Test
+    fun `refreshRecentPosts reloads statuses and updates refreshing state`() = runTest {
+        val updatedStatus = StatusItem(id = JsonPrimitive("999"), content = "Refreshed post")
+        coEvery { repository.getUserTopTagsAndPosts(forceRefresh = true) } returns Result.success(
+            PixelfedRepository.TagsAndPosts(
+                topTags = listOf(TagCount("refreshedTag", 5)),
+                statuses = listOf(updatedStatus)
+            )
+        )
+
+        viewModel.refreshRecentPosts()
+        advanceUntilIdle()
+
+        coVerify { repository.getUserTopTagsAndPosts(forceRefresh = true) }
+        assertEquals(listOf(updatedStatus), viewModel.recentStatuses.value)
+        assertEquals(false, viewModel.isRefreshing.value)
     }
 }

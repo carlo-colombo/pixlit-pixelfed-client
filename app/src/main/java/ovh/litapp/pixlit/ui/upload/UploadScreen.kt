@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +65,7 @@ fun UploadScreen(
     val visibleRecentPostCount by viewModel.visibleRecentPostCount.collectAsState()
     val isLoadingMorePosts by viewModel.isLoadingMorePosts.collectAsState()
     val isLoadingTags by viewModel.isLoadingTags.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val currentPage by viewModel.currentPage.collectAsState()
     val originalMetadata by viewModel.originalMetadata.collectAsState()
     val resizedMetadata by viewModel.resizedMetadata.collectAsState()
@@ -98,6 +100,7 @@ fun UploadScreen(
         visibleRecentPostCount = visibleRecentPostCount,
         isLoadingMorePosts = isLoadingMorePosts,
         isLoadingTags = isLoadingTags,
+        isRefreshing = isRefreshing,
         currentPage = currentPage,
         originalMetadata = originalMetadata,
         resizedMetadata = resizedMetadata,
@@ -119,6 +122,7 @@ fun UploadScreen(
         onSocialTagClick = { tags -> tags.forEach(viewModel::insertTag) },
         onCopyPost = { text -> viewModel.onCaptionChanged(TextFieldValue(text)) },
         onLoadMorePosts = viewModel::loadMoreRecentPosts,
+        onRefreshRecentPosts = viewModel::refreshRecentPosts,
         onRefreshTags = { viewModel.fetchTags(forceRefresh = true) },
         onUpload = { viewModel.upload() },
         reminderPreferences = reminderPreferences,
@@ -141,6 +145,7 @@ fun UploadContent(
     visibleRecentPostCount: Int = 10,
     isLoadingMorePosts: Boolean = false,
     isLoadingTags: Boolean,
+    isRefreshing: Boolean = false,
     currentPage: Int,
     originalMetadata: ImageMetadata?,
     resizedMetadata: ImageMetadata?,
@@ -162,6 +167,7 @@ fun UploadContent(
     onSocialTagClick: (List<String>) -> Unit = {},
     onCopyPost: (String) -> Unit = {},
     onLoadMorePosts: () -> Unit = {},
+    onRefreshRecentPosts: () -> Unit = {},
     onRefreshTags: () -> Unit = {},
     onUpload: () -> Unit = {},
     reminderPreferences: ReminderPreferences? = null,
@@ -396,8 +402,12 @@ fun UploadContent(
                 modifier = Modifier.padding(padding)
             )
         } else if (selectedTab == 2) {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = onRefreshRecentPosts,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
             ) {
                 RecentPostsSection(
                     statuses = recentStatuses.take(visibleRecentPostCount),
@@ -407,7 +417,9 @@ fun UploadContent(
                     },
                     onLoadMore = onLoadMorePosts,
                     isLoadingMore = isLoadingMorePosts,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp)
                 )
             }
         } else if (selectedTab == 3) {
