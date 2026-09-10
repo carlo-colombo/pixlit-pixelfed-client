@@ -30,7 +30,7 @@ Pixlit is a personal Android client for uploading images to [Pixelfed](https://p
 - Fetch the current theme from Bluesky for each reminder and include it in the notification title.
 - Tap a reminder to open Pixlit with `#BlueSkyArtShow` and the theme prefilled, without duplicating existing tags.
 - Configure the Friday and Saturday reminder times in Settings; times use the device timezone.
-- Reminders use WorkManager and are rescheduled after time changes and device restarts.
+- Reminders use idle-tolerant alarms and are rescheduled after time changes and device restarts; WorkManager only fetches the optional theme.
 
 ## Tech Stack
 

@@ -13,13 +13,11 @@ class ArtShowReminderWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
     private val repository: BlueskyArtShowRepository,
-    private val notifier: ArtShowNotifier,
-    private val scheduler: ReminderScheduler
+    private val notifier: ArtShowNotifier
 ) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): Result {
         val theme = runCatching { repository.fetchTheme() }.getOrNull()
         notifier.notify(theme, inputData.getInt(DAY_KEY, 5) == 6)
-        scheduler.scheduleAll()
         return Result.success()
     }
     companion object { const val DAY_KEY = "day" }

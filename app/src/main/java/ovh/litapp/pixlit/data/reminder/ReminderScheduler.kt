@@ -1,10 +1,11 @@
 package ovh.litapp.pixlit.data.reminder
 
 import android.content.Context
-import androidx.work.*
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.Intent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.*
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -14,23 +15,41 @@ class ReminderScheduler @Inject constructor(
     private val preferences: ReminderPreferences
 ) {
     fun scheduleAll() {
-        schedule("art_show_friday", DayOfWeek.FRIDAY, preferences.friday)
-        schedule("art_show_saturday", DayOfWeek.SATURDAY, preferences.saturday)
+        schedule(DayOfWeek.FRIDAY, preferences.friday)
+        schedule(DayOfWeek.SATURDAY, preferences.saturday)
     }
 
     fun rescheduleAll() {
-        WorkManager.getInstance(context).cancelUniqueWork("art_show_friday")
-        WorkManager.getInstance(context).cancelUniqueWork("art_show_saturday")
+        cancel(DayOfWeek.FRIDAY)
+        cancel(DayOfWeek.SATURDAY)
         scheduleAll()
     }
 
-    private fun schedule(name: String, day: DayOfWeek, time: LocalTime) {
+    private fun schedule(day: DayOfWeek, time: LocalTime) {
         val delay = nextRunDelay(day, time)
-        val request = OneTimeWorkRequestBuilder<ArtShowReminderWorker>()
-            .setInputData(workDataOf(ArtShowReminderWorker.DAY_KEY to day.value))
-            .setInitialDelay(delay.toMillis(), TimeUnit.MILLISECONDS)
-            .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(name, ExistingWorkPolicy.REPLACE, request)
+        val intent = Intent(context, ArtShowReminderReceiver::class.java)
+            .putExtra(ArtShowReminderReceiver.DAY_KEY, day.value)
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            day.value,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        context.getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP,
+            System.currentTimeMillis() + delay.toMillis(),
+            pendingIntent
+        )
+    }
+
+    private fun cancel(day: DayOfWeek) {
+        val intent = Intent(context, ArtShowReminderReceiver::class.java)
+        PendingIntent.getBroadcast(
+            context,
+            day.value,
+            intent,
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        )?.let { context.getSystemService(AlarmManager::class.java).cancel(it) }
     }
 }
 
