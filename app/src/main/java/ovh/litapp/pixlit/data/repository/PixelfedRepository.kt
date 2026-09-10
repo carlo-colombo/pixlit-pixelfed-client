@@ -450,6 +450,35 @@ class PixelfedRepository @Inject constructor(
         }
     }
 
+    suspend fun getMoreUserStatuses(maxId: String): Result<List<StatusItem>> = withContext(Dispatchers.IO) {
+        val instanceUrl = tokenManager.instanceUrl
+        val accessToken = tokenManager.accessToken
+        if (instanceUrl.isNullOrBlank() || accessToken.isNullOrBlank()) {
+            return@withContext Result.failure(Exception("Not logged in"))
+        }
+
+        try {
+            val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
+            val authHeader = "Bearer $accessToken"
+            val accountId = api.verifyCredentials(authHeader).body()?.getIdString()
+                ?: return@withContext Result.failure(Exception("Failed to get account ID"))
+            val response = api.getUserStatuses(authHeader, accountId, limit = 40, maxId = maxId)
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(Exception("Failed to fetch more statuses: ${response.code()}"))
+            }
+            val statuses = response.body().orEmpty()
+            val entities = statuses.mapNotNull { item ->
+                item.getIdString()?.let { id ->
+                    StatusEntity(id, item.content, item.text, item.description, System.currentTimeMillis(), instanceUrl)
+                }
+            }
+            if (entities.isNotEmpty()) statusDao.insertStatuses(entities)
+            Result.success(statuses)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun getUserTopTags(forceRefresh: Boolean = false): Result<List<String>> {
         return getUserTopTagsAndPosts(forceRefresh).map { result -> result.topTags.map { it.name } }
     }

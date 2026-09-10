@@ -26,7 +26,8 @@ interface PixelfedApi {
     suspend fun getUserStatuses(
         @Header("Authorization") authHeader: String,
         @Path("id") accountId: String,
-        @Query("limit") limit: Int = 20
+        @Query("limit") limit: Int = 20,
+        @Query("max_id") maxId: String? = null
     ): Response<List<StatusItem>>
 
     @FormUrlEncoded
@@ -173,7 +174,9 @@ data class StatusItem(
     @SerializedName("text") val text: String? = null,
     @SerializedName("description") val description: String? = null,
     @SerializedName("spoiler_text") val spoilerText: String? = null,
-    @SerializedName("media_attachments") val mediaAttachments: List<MediaAttachment>? = null
+    @SerializedName("media_attachments") val mediaAttachments: List<MediaAttachment>? = null,
+    @SerializedName("favourites_count") val favouritesCount: Int = 0,
+    @SerializedName("reblogs_count") val reblogsCount: Int = 0
 ) {
     fun getIdString(): String? = id.toSafeString()
 }

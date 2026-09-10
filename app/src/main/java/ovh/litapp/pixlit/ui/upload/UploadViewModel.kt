@@ -50,6 +50,12 @@ class UploadViewModel @Inject constructor(
     private val _recentStatuses = MutableStateFlow<List<StatusItem>>(emptyList())
     val recentStatuses = _recentStatuses.asStateFlow()
 
+    private val _visibleRecentPostCount = MutableStateFlow(10)
+    val visibleRecentPostCount = _visibleRecentPostCount.asStateFlow()
+
+    private val _isLoadingMorePosts = MutableStateFlow(false)
+    val isLoadingMorePosts = _isLoadingMorePosts.asStateFlow()
+
     private val _isLoadingTags = MutableStateFlow(false)
     val isLoadingTags = _isLoadingTags.asStateFlow()
 
@@ -75,7 +81,8 @@ class UploadViewModel @Inject constructor(
     val isCalculatingResized = _isCalculatingResized.asStateFlow()
 
     init {
-        fetchTags()
+        // Load the real account history so the recent-posts section is useful on first render.
+        fetchTags(forceRefresh = true)
         fetchCollections()
 
         // Sync metadata when current page or URIs or resize setting changes
@@ -173,6 +180,7 @@ class UploadViewModel @Inject constructor(
                     _topTags.value = if (data.topTags.isNotEmpty()) data.topTags else repository.getDefaultStaticTagCounts()
                     if (data.statuses.isNotEmpty()) {
                         _recentStatuses.value = data.statuses
+                        _visibleRecentPostCount.value = 10
                     }
                 },
                 onFailure = { ex ->
@@ -183,6 +191,26 @@ class UploadViewModel @Inject constructor(
                 }
             )
             _isLoadingTags.value = false
+        }
+    }
+
+    fun loadMoreRecentPosts() {
+        if (_isLoadingMorePosts.value) return
+        if (_visibleRecentPostCount.value < _recentStatuses.value.size) {
+            _visibleRecentPostCount.value += 10
+            return
+        }
+
+        val lastId = _recentStatuses.value.lastOrNull()?.getIdString() ?: return
+        viewModelScope.launch {
+            _isLoadingMorePosts.value = true
+            repository.getMoreUserStatuses(lastId).onSuccess { moreStatuses ->
+                val existingIds = _recentStatuses.value.mapNotNull { it.getIdString() }.toSet()
+                val newStatuses = moreStatuses.filter { it.getIdString() !in existingIds }
+                _recentStatuses.value += newStatuses
+                _visibleRecentPostCount.value += 10
+            }
+            _isLoadingMorePosts.value = false
         }
     }
 

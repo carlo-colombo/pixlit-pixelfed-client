@@ -61,6 +61,8 @@ fun UploadScreen(
     val isError by viewModel.isError.collectAsState()
     val topTags by viewModel.topTags.collectAsState()
     val recentStatuses by viewModel.recentStatuses.collectAsState()
+    val visibleRecentPostCount by viewModel.visibleRecentPostCount.collectAsState()
+    val isLoadingMorePosts by viewModel.isLoadingMorePosts.collectAsState()
     val isLoadingTags by viewModel.isLoadingTags.collectAsState()
     val currentPage by viewModel.currentPage.collectAsState()
     val originalMetadata by viewModel.originalMetadata.collectAsState()
@@ -93,6 +95,8 @@ fun UploadScreen(
         isError = isError,
         topTags = topTags,
         recentStatuses = recentStatuses,
+        visibleRecentPostCount = visibleRecentPostCount,
+        isLoadingMorePosts = isLoadingMorePosts,
         isLoadingTags = isLoadingTags,
         currentPage = currentPage,
         originalMetadata = originalMetadata,
@@ -113,6 +117,8 @@ fun UploadScreen(
         onCaptionChanged = { viewModel.onCaptionChanged(it) },
         onTagClick = { viewModel.insertTag(it) },
         onSocialTagClick = { tags -> tags.forEach(viewModel::insertTag) },
+        onCopyPost = { text -> viewModel.onCaptionChanged(TextFieldValue(text)) },
+        onLoadMorePosts = viewModel::loadMoreRecentPosts,
         onRefreshTags = { viewModel.fetchTags(forceRefresh = true) },
         onUpload = { viewModel.upload() },
         reminderPreferences = reminderPreferences,
@@ -132,6 +138,8 @@ fun UploadContent(
     isError: Boolean,
     topTags: List<TagCount>,
     recentStatuses: List<StatusItem>,
+    visibleRecentPostCount: Int = 10,
+    isLoadingMorePosts: Boolean = false,
     isLoadingTags: Boolean,
     currentPage: Int,
     originalMetadata: ImageMetadata?,
@@ -152,6 +160,8 @@ fun UploadContent(
     onCaptionChanged: (TextFieldValue) -> Unit = {},
     onTagClick: (String) -> Unit = {},
     onSocialTagClick: (List<String>) -> Unit = {},
+    onCopyPost: (String) -> Unit = {},
+    onLoadMorePosts: () -> Unit = {},
     onRefreshTags: () -> Unit = {},
     onUpload: () -> Unit = {},
     reminderPreferences: ReminderPreferences? = null,
@@ -159,7 +169,7 @@ fun UploadContent(
     onSimulateNotification: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Upload", "Social", "Debug", "Settings")
+    val tabs = listOf("Upload", "Social", "Last", "Debug", "Settings")
 
     val maxPhotos = 6
     val pagerState = rememberPagerState(
@@ -196,7 +206,7 @@ fun UploadContent(
                         }
                     }
                 )
-                PrimaryTabRow(selectedTabIndex = selectedTab) {
+                PrimaryScrollableTabRow(selectedTabIndex = selectedTab) {
                     tabs.forEachIndexed { index, title ->
                         Tab(
                             selected = selectedTab == index,
@@ -386,6 +396,21 @@ fun UploadContent(
                 modifier = Modifier.padding(padding)
             )
         } else if (selectedTab == 2) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
+            ) {
+                RecentPostsSection(
+                    statuses = recentStatuses.take(visibleRecentPostCount),
+                    onCopyPost = {
+                        onCopyPost(it)
+                        selectedTab = 0
+                    },
+                    onLoadMore = onLoadMorePosts,
+                    isLoadingMore = isLoadingMorePosts,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        } else if (selectedTab == 3) {
             // Debug Tab
             Column(
                 modifier = Modifier
