@@ -59,6 +59,9 @@ class UploadViewModel @Inject constructor(
     private val _isLoadingTags = MutableStateFlow(false)
     val isLoadingTags = _isLoadingTags.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
+
     private val _userCollections = MutableStateFlow<List<CollectionItem>>(repository.getDefaultStaticCollections())
     val userCollections = _userCollections.asStateFlow()
 
@@ -168,6 +171,28 @@ class UploadViewModel @Inject constructor(
                     Log.e("UploadViewModel", "createCollection failure", ex)
                 }
             )
+        }
+    }
+
+    fun refreshRecentPosts() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            val result = repository.getUserTopTagsAndPosts(forceRefresh = true)
+            result.fold(
+                onSuccess = { data ->
+                    if (data.topTags.isNotEmpty()) {
+                        _topTags.value = data.topTags
+                    }
+                    if (data.statuses.isNotEmpty()) {
+                        _recentStatuses.value = data.statuses
+                        _visibleRecentPostCount.value = 10
+                    }
+                },
+                onFailure = { ex ->
+                    Log.e("UploadViewModel", "refreshRecentPosts failure", ex)
+                }
+            )
+            _isRefreshing.value = false
         }
     }
 
