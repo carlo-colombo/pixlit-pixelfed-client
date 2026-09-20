@@ -225,171 +225,214 @@ fun UploadContent(
         }
     ) { padding ->
         if (selectedTab == 0) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Top
             ) {
-                ImagePagerSection(
-                    selectedImageUris = selectedImageUris,
-                    pagerState = pagerState
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Top
+                ) {
+                    ImagePagerSection(
+                        selectedImageUris = selectedImageUris,
+                        pagerState = pagerState
+                    )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                if (selectedImageUris.isNotEmpty()) {
+                    if (selectedImageUris.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = { onShiftLeft(currentPage) },
+                                enabled = currentPage > 0
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Shift Left")
+                                Spacer(Modifier.width(4.dp))
+                                Text("Shift Left")
+                            }
+
+                            OutlinedButton(
+                                onClick = { onRemoveImage(currentPage) },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Icon(Icons.Default.Delete, "Remove Photo")
+                                Spacer(Modifier.width(4.dp))
+                                Text("Remove")
+                            }
+
+                            OutlinedButton(
+                                onClick = { onShiftRight(currentPage) },
+                                enabled = currentPage < selectedImageUris.size - 1
+                            ) {
+                                Text("Shift Right")
+                                Spacer(Modifier.width(4.dp))
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, "Shift Right")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OrderPreviewList(
+                            selectedImageUris = selectedImageUris,
+                            currentPage = currentPage,
+                            maxPhotos = maxPhotos,
+                            onImageClick = { index -> onPageChanged(index) }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    MetadataDisplay(
+                        currentPage = currentPage,
+                        totalImages = selectedImageUris.size,
+                        originalMetadata = originalMetadata,
+                        resizedMetadata = resizedMetadata,
+                        isCalculatingResized = isCalculatingResized,
+                        resizeTo8Mb = resizeTo8Mb
+                    )
+
+                    if (selectedImageUris.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onResizeToggled(!resizeTo8Mb) }
+                            .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedButton(
-                            onClick = { onShiftLeft(currentPage) },
-                            enabled = currentPage > 0
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Shift Left")
-                            Spacer(Modifier.width(4.dp))
-                            Text("Shift Left")
-                        }
-
-                        OutlinedButton(
-                            onClick = { onRemoveImage(currentPage) },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                        ) {
-                            Icon(Icons.Default.Delete, "Remove Photo")
-                            Spacer(Modifier.width(4.dp))
-                            Text("Remove")
-                        }
-
-                        OutlinedButton(
-                            onClick = { onShiftRight(currentPage) },
-                            enabled = currentPage < selectedImageUris.size - 1
-                        ) {
-                            Text("Shift Right")
-                            Spacer(Modifier.width(4.dp))
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, "Shift Right")
-                        }
+                        Checkbox(
+                            checked = resizeTo8Mb,
+                            onCheckedChange = { onResizeToggled(it) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Resize down to 8MB",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    OrderPreviewList(
-                        selectedImageUris = selectedImageUris,
-                        currentPage = currentPage,
-                        maxPhotos = maxPhotos,
-                        onImageClick = { index -> onPageChanged(index) }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-
-                MetadataDisplay(
-                    currentPage = currentPage,
-                    totalImages = selectedImageUris.size,
-                    originalMetadata = originalMetadata,
-                    resizedMetadata = resizedMetadata,
-                    isCalculatingResized = isCalculatingResized,
-                    resizeTo8Mb = resizeTo8Mb
-                )
-
-                if (selectedImageUris.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { onResizeToggled(!resizeTo8Mb) }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = resizeTo8Mb,
-                        onCheckedChange = { onResizeToggled(it) }
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Resize down to 8MB",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Button(
-                    onClick = { galleryLauncher.launch("image/*") },
-                    enabled = selectedImageUris.size < maxPhotos,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        when {
-                            selectedImageUris.isEmpty() -> "Select Photos from Gallery (up to 6)"
-                            selectedImageUris.size < maxPhotos -> "Add More Photos (${selectedImageUris.size}/$maxPhotos)"
-                            else -> "Maximum Photos Reached (6/6)"
-                        }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                OutlinedTextField(
-                    value = captionState,
-                    onValueChange = { onCaptionChanged(it) },
-                    label = { Text("Write a caption...") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp),
-                    maxLines = 5
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                TagSelectionCloud(
-                    topTags = topTags,
-                    isLoadingTags = isLoadingTags,
-                    onTagClick = { onTagClick(it) },
-                    onRefreshClick = { onRefreshTags() }
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                CollectionSelectionSection(
-                    collections = userCollections,
-                    selectedCollectionIds = selectedCollectionIds,
-                    isLoadingCollections = isLoadingCollections,
-                    onCollectionToggle = onCollectionToggle,
-                    onCreateCollection = onCreateCollection
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (statusMessage != null) {
-                    Text(
-                        text = statusMessage,
-                        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                Button(
-                    onClick = { onUpload() },
-                    enabled = !isUploading && selectedImageUris.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (isUploading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = MaterialTheme.colorScheme.onPrimary
+                    Button(
+                        onClick = { galleryLauncher.launch("image/*") },
+                        enabled = selectedImageUris.size < maxPhotos,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            when {
+                                selectedImageUris.isEmpty() -> "Select Photos from Gallery (up to 6)"
+                                selectedImageUris.size < maxPhotos -> "Add More Photos (${selectedImageUris.size}/$maxPhotos)"
+                                else -> "Maximum Photos Reached (6/6)"
+                            }
                         )
-                    } else {
-                        val text = if (selectedImageUris.size > 1) "Upload ${selectedImageUris.size} Photos" else "Upload Photo"
-                        Text(text)
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = captionState,
+                        onValueChange = { onCaptionChanged(it) },
+                        label = { Text("Write a caption...") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(240.dp),
+                        maxLines = 10
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    val charCount = captionState.text.length
+                    val pfLimit = 500
+                    val bsLimit = 300
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "pf: $charCount/$pfLimit",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (charCount > pfLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "bs: $charCount/$bsLimit",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (charCount > bsLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    TagSelectionCloud(
+                        topTags = topTags,
+                        isLoadingTags = isLoadingTags,
+                        onTagClick = { onTagClick(it) },
+                        onRefreshClick = { onRefreshTags() }
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    CollectionSelectionSection(
+                        collections = userCollections,
+                        selectedCollectionIds = selectedCollectionIds,
+                        isLoadingCollections = isLoadingCollections,
+                        onCollectionToggle = onCollectionToggle,
+                        onCreateCollection = onCreateCollection
+                    )
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth(),
+                    tonalElevation = 3.dp,
+                    shadowElevation = 8.dp
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (statusMessage != null) {
+                            Text(
+                                text = statusMessage,
+                                color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+
+                        Button(
+                            onClick = { onUpload() },
+                            enabled = !isUploading && selectedImageUris.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (isUploading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                val text = if (selectedImageUris.size > 1) "Upload ${selectedImageUris.size} Photos" else "Upload Photo"
+                                Text(text)
+                            }
+                        }
                     }
                 }
             }
