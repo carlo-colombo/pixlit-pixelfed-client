@@ -35,6 +35,8 @@ import javax.inject.Singleton
 
 data class TagCount(val name: String, val count: Int)
 
+data class CacheSummaryItem(val name: String, val entityCount: Int)
+
 private data class CachedTagSearch(
     val names: List<String>
 )
@@ -560,6 +562,29 @@ class PixelfedRepository @Inject constructor(
             Log.e(TAG, "searchTags failed", e)
             Result.failure(e)
         }
+    }
+
+    suspend fun getCacheSummary(): List<CacheSummaryItem> = withContext(Dispatchers.IO) {
+        val tagSearchCount = runCatching {
+            val type = object : TypeToken<Map<String, CachedTagSearch>>() {}.type
+            gson.fromJson<Map<String, CachedTagSearch>>(tokenManager.tagSearchCacheJson, type)?.size ?: 0
+        }.getOrDefault(0)
+        val legacyTagCount = runCatching {
+            val json = tokenManager.cachedTagsJson
+            if (json.isNullOrBlank()) 0 else {
+                val element = com.google.gson.JsonParser.parseString(json)
+                if (element.isJsonArray) element.asJsonArray.size() else 0
+            }
+        }.getOrDefault(0)
+        val statusCount = runCatching {
+            tokenManager.instanceUrl?.let { statusDao.getStatuses(it).size } ?: 0
+        }.getOrDefault(0)
+
+        listOf(
+            CacheSummaryItem("Remote tag searches", tagSearchCount),
+            CacheSummaryItem("Legacy cached tags", legacyTagCount),
+            CacheSummaryItem("Cached statuses", statusCount)
+        )
     }
 
     companion object {

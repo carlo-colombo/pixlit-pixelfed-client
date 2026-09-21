@@ -19,6 +19,7 @@ import ovh.litapp.pixlit.data.api.CollectionItem
 import ovh.litapp.pixlit.data.api.PlaceItem
 import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
+import ovh.litapp.pixlit.data.repository.CacheSummaryItem
 import ovh.litapp.pixlit.utils.ImageMetadata
 import ovh.litapp.pixlit.utils.ImageUtils
 import javax.inject.Inject
@@ -38,6 +39,9 @@ class UploadViewModel @Inject constructor(
     private val _remoteTagSuggestions = MutableStateFlow<List<String>>(emptyList())
     val remoteTagSuggestions = _remoteTagSuggestions.asStateFlow()
     private var tagSearchJob: Job? = null
+
+    private val _cacheSummary = MutableStateFlow<List<CacheSummaryItem>>(emptyList())
+    val cacheSummary = _cacheSummary.asStateFlow()
 
     private val _resizeTo8Mb = MutableStateFlow(false)
     val resizeTo8Mb = _resizeTo8Mb.asStateFlow()
@@ -118,6 +122,7 @@ class UploadViewModel @Inject constructor(
         // Load the real account history so the recent-posts section is useful on first render.
         fetchTags(forceRefresh = true)
         fetchCollections()
+        refreshCacheSummary()
 
         // Sync metadata when current page or URIs or resize setting changes
         combine(
@@ -447,6 +452,13 @@ class UploadViewModel @Inject constructor(
             delay(300)
             val result = repository.searchTags(query)
             _remoteTagSuggestions.value = result.getOrDefault(emptyList())
+            refreshCacheSummary()
+        }
+    }
+
+    fun refreshCacheSummary() {
+        viewModelScope.launch {
+            _cacheSummary.value = repository.getCacheSummary()
         }
     }
 

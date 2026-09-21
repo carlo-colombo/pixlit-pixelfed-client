@@ -44,6 +44,7 @@ import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.data.api.toSafeString
 import ovh.litapp.pixlit.data.repository.TagCount
+import ovh.litapp.pixlit.data.repository.CacheSummaryItem
 import ovh.litapp.pixlit.ui.theme.PixlitTheme
 import ovh.litapp.pixlit.ui.upload.components.*
 import android.net.Uri
@@ -98,6 +99,7 @@ fun UploadScreen(
     val isError by viewModel.isError.collectAsState()
     val topTags by viewModel.topTags.collectAsState()
     val remoteTagSuggestions by viewModel.remoteTagSuggestions.collectAsState()
+    val cacheSummary by viewModel.cacheSummary.collectAsState()
     val recentStatuses by viewModel.recentStatuses.collectAsState()
     val visibleRecentPostCount by viewModel.visibleRecentPostCount.collectAsState()
     val isLoadingMorePosts by viewModel.isLoadingMorePosts.collectAsState()
@@ -142,6 +144,7 @@ fun UploadScreen(
         isError = isError,
         topTags = topTags,
         remoteTagSuggestions = remoteTagSuggestions,
+        cacheSummary = cacheSummary,
         recentStatuses = recentStatuses,
         visibleRecentPostCount = visibleRecentPostCount,
         isLoadingMorePosts = isLoadingMorePosts,
@@ -177,6 +180,7 @@ fun UploadScreen(
         onCaptionChanged = { viewModel.onCaptionChanged(it) },
         onInsertHash = { viewModel.insertHash() },
         onTagSearchQueryChanged = { viewModel.searchTagSuggestions(it) },
+        onRefreshCacheSummary = viewModel::refreshCacheSummary,
         onTagSuggestionClick = { viewModel.insertTagSuggestion(it) },
         onTagClick = { viewModel.insertTag(it) },
         onSocialTagClick = { tags -> tags.forEach(viewModel::insertTag) },
@@ -202,6 +206,7 @@ fun UploadContent(
     isError: Boolean,
     topTags: List<TagCount>,
     remoteTagSuggestions: List<String> = emptyList(),
+    cacheSummary: List<CacheSummaryItem> = emptyList(),
     recentStatuses: List<StatusItem>,
     visibleRecentPostCount: Int = 10,
     isLoadingMorePosts: Boolean = false,
@@ -237,6 +242,7 @@ fun UploadContent(
     onCaptionChanged: (TextFieldValue) -> Unit = {},
     onInsertHash: () -> Unit = {},
     onTagSearchQueryChanged: (String) -> Unit = {},
+    onRefreshCacheSummary: () -> Unit = {},
     onTagSuggestionClick: (String) -> Unit = {},
     onTagClick: (String) -> Unit = {},
     onSocialTagClick: (List<String>) -> Unit = {},
@@ -280,6 +286,10 @@ fun UploadContent(
         if (currentPage != pagerState.currentPage && currentPage < selectedImageUris.size) {
             pagerState.scrollToPage(currentPage)
         }
+    }
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == 3) onRefreshCacheSummary()
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -687,6 +697,41 @@ fun UploadContent(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Cache", style = MaterialTheme.typography.titleMedium)
+                            TextButton(onClick = onRefreshCacheSummary) {
+                                Text("Refresh")
+                            }
+                        }
+                        cacheSummary.forEach { cache ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(cache.name, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    text = cache.entityCount.toString(),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Button(
                     onClick = onSimulateNotification,
