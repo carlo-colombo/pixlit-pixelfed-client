@@ -129,18 +129,90 @@ object ImageUtils {
     }
 
     fun extractExifLocation(context: Context, uri: Uri): Pair<Double, Double>? {
+        val targetUri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q && uri.scheme == "content") {
+            try {
+                android.provider.MediaStore.setRequireOriginal(uri)
+            } catch (e: Throwable) {
+                uri
+            }
+        } else {
+            uri
+        }
+
+        var location = tryReadExifLocationFromStream(context, targetUri)
+        if (location != null) return location
+
+        val tempFile = copyUriToTempFile(context, targetUri) ?: copyUriToTempFile(context, uri)
+        if (tempFile != null) {
+            try {
+                val exif = ExifInterface(tempFile.absolutePath)
+                location = parseLatLongFromExif(exif)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                try {
+                    tempFile.delete()
+                } catch (e: Exception) {
+                    // Ignore deletion failure
+                }
+            }
+        }
+        return location
+    }
+
+    private fun tryReadExifLocationFromStream(context: Context, uri: Uri): Pair<Double, Double>? {
         return try {
             context.contentResolver.openInputStream(uri)?.use { stream ->
                 val exif = ExifInterface(stream)
-                val latLong = exif.latLong
-                if (latLong != null && latLong.size >= 2) {
-                    Pair(latLong[0], latLong[1])
-                } else {
-                    null
-                }
+                parseLatLongFromExif(exif)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            null
+        }
+    }
+
+    private fun parseLatLongFromExif(exif: ExifInterface): Pair<Double, Double>? {
+        val latLong = exif.latLong
+        if (latLong != null && latLong.size >= 2 && (latLong[0] != 0.0 || latLong[1] != 0.0)) {
+            return Pair(latLong[0], latLong[1])
+        }
+
+        val latAttr = exif.getAttribute(ExifInterface.TAG_GPS_LATITUDE)
+        val latRef = exif.getAttribute(ExifInterface.TAG_GPS_LATITUDE_REF)
+        val lngAttr = exif.getAttribute(ExifInterface.TAG_GPS_LONGITUDE)
+        val lngRef = exif.getAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF)
+
+        if (!latAttr.isNullOrBlank() && !latRef.isNullOrBlank() && !lngAttr.isNullOrBlank() && !lngRef.isNullOrBlank()) {
+            val lat = convertDmsToDecimal(latAttr, latRef)
+            val lng = convertDmsToDecimal(lngAttr, lngRef)
+            if (lat != null && lng != null) {
+                return Pair(lat, lng)
+            }
+        }
+        return null
+    }
+
+    private fun convertDmsToDecimal(dms: String, ref: String): Double? {
+        return try {
+            val parts = dms.split(",")
+            if (parts.size < 3) return null
+            fun parseRational(s: String): Double {
+                val pair = s.trim().split("/")
+                return if (pair.size == 2) {
+                    pair[0].trim().toDouble() / pair[1].trim().toDouble()
+                } else {
+                    pair[0].trim().toDouble()
+                }
+            }
+            val degrees = parseRational(parts[0])
+            val minutes = parseRational(parts[1])
+            val seconds = parseRational(parts[2])
+            var decimal = degrees + (minutes / 60.0) + (seconds / 3600.0)
+            if (ref.equals("S", ignoreCase = true) || ref.equals("W", ignoreCase = true)) {
+                decimal = -decimal
+            }
+            decimal
+        } catch (e: Exception) {
             null
         }
     }
