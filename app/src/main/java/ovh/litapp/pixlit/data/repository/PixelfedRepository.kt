@@ -19,6 +19,7 @@ import com.google.gson.reflect.TypeToken
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -252,12 +253,14 @@ class PixelfedRepository @Inject constructor(
         try {
             val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
             val authHeader = accessToken?.let { "Bearer $it" }
-            val response = api.searchPlaces(
-                authHeader = authHeader,
-                query = query,
-                lat = lat,
-                lng = lng
-            )
+            val response = withTimeoutOrNull(8_000L) {
+                api.searchPlaces(
+                    authHeader = authHeader,
+                    query = query,
+                    lat = lat,
+                    lng = lng
+                )
+            } ?: return@withContext Result.failure(Exception("Place search timed out"))
             if (response.isSuccessful && response.body() != null) {
                 Result.success(response.body()!!)
             } else {

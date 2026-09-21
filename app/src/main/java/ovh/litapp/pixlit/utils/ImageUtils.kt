@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.location.Geocoder
 import androidx.exifinterface.media.ExifInterface
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -158,6 +159,23 @@ object ImageUtils {
             }
         }
         return location
+    }
+
+    fun cityNameFromLocation(context: Context, latitude: Double, longitude: Double): String? {
+        if (!Geocoder.isPresent()) return null
+        return try {
+            @Suppress("DEPRECATION")
+            Geocoder(context, Locale.getDefault())
+                .getFromLocation(latitude, longitude, 1)
+                ?.firstOrNull()
+                ?.let { address ->
+                    val city = address.locality ?: address.subAdminArea ?: address.adminArea
+                    val country = address.countryName
+                    listOfNotNull(city, country).joinToString(", ").takeIf { it.isNotBlank() }
+                }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun tryReadExifLocationFromStream(context: Context, uri: Uri): Pair<Double, Double>? {

@@ -94,7 +94,7 @@ fun PositionSelectionSection(
                                 )
                                 if (isExifAutoDetected) {
                                     Text(
-                                        text = "📍 Auto-detected from photo EXIF",
+                                        text = "📍 City auto-detected from photo EXIF",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                                     )

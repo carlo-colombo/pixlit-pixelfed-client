@@ -60,6 +60,14 @@ class MainActivity : ComponentActivity() {
             val prefillTheme by viewModel.prefillTheme.collectAsState()
             val sharedImageUris by viewModel.sharedImageUris.collectAsState()
 
+            LaunchedEffect(isLoggedIn) {
+                if (isLoggedIn && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
+                    checkSelfPermission(Manifest.permission.ACCESS_MEDIA_LOCATION) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    requestPermissions(arrayOf(Manifest.permission.ACCESS_MEDIA_LOCATION), 101)
+                }
+            }
+
             PixlitTheme {
                 Column(modifier = Modifier.fillMaxSize()) {
                     DevBanner()

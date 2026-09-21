@@ -156,28 +156,17 @@ class UploadViewModel @Inject constructor(
                             _isExifMissing.value = false
                             val (lat, lng) = coords
                             _isSearchingPlaces.value = true
-                            val result = repository.searchPlaces(lat = lat, lng = lng)
+                            val cityName = ImageUtils.cityNameFromLocation(context, lat, lng)
                             _isSearchingPlaces.value = false
-                            result.fold(
-                                onSuccess = { places ->
-                                    if (places.isNotEmpty()) {
-                                        _selectedPlace.value = places.first()
-                                        _customLocationName.value = null
-                                        _isExifAutoDetected.value = true
-                                    } else {
-                                        val formatted = String.format(java.util.Locale.US, "%.4f, %.4f", lat, lng)
-                                        _customLocationName.value = formatted
-                                        _selectedPlace.value = null
-                                        _isExifAutoDetected.value = true
-                                    }
-                                },
-                                onFailure = {
-                                    val formatted = String.format(java.util.Locale.US, "%.4f, %.4f", lat, lng)
-                                    _customLocationName.value = formatted
-                                    _selectedPlace.value = null
-                                    _isExifAutoDetected.value = true
-                                }
+                            val locationName = cityName ?: String.format(
+                                java.util.Locale.US,
+                                "%.2f, %.2f",
+                                lat,
+                                lng
                             )
+                            _customLocationName.value = locationName
+                            _selectedPlace.value = null
+                            _isExifAutoDetected.value = true
                             break
                         }
                     } catch (e: Exception) {
