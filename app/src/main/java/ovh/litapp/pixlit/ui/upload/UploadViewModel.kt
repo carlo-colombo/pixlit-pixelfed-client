@@ -93,6 +93,9 @@ class UploadViewModel @Inject constructor(
     private val _isExifAutoDetected = MutableStateFlow(false)
     val isExifAutoDetected = _isExifAutoDetected.asStateFlow()
 
+    private val _isExifMissing = MutableStateFlow(false)
+    val isExifMissing = _isExifMissing.asStateFlow()
+
     private val _placeSearchQuery = MutableStateFlow("")
     val placeSearchQuery = _placeSearchQuery.asStateFlow()
 
@@ -129,6 +132,7 @@ class UploadViewModel @Inject constructor(
 
         _selectedImageUris.onEach { uris ->
             if (uris.isEmpty()) {
+                _isExifMissing.value = false
                 if (!isUserLocationSelectionManual) {
                     _selectedPlace.value = null
                     _customLocationName.value = null
@@ -143,10 +147,13 @@ class UploadViewModel @Inject constructor(
     fun detectExifLocation(uris: List<Uri>) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
+                var foundExif = false
                 for (uri in uris) {
                     try {
                         val coords = ImageUtils.extractExifLocation(context, uri)
                         if (coords != null) {
+                            foundExif = true
+                            _isExifMissing.value = false
                             val (lat, lng) = coords
                             _isSearchingPlaces.value = true
                             val result = repository.searchPlaces(lat = lat, lng = lng)
@@ -176,6 +183,9 @@ class UploadViewModel @Inject constructor(
                     } catch (e: Exception) {
                         Log.e("UploadViewModel", "EXIF location detection failed", e)
                     }
+                }
+                if (!foundExif) {
+                    _isExifMissing.value = true
                 }
             }
         }
@@ -503,6 +513,7 @@ class UploadViewModel @Inject constructor(
                     _selectedPlace.value = null
                     _customLocationName.value = null
                     _isExifAutoDetected.value = false
+                    _isExifMissing.value = false
                     isUserLocationSelectionManual = false
                     _placeSearchQuery.value = ""
                     _placeSearchResults.value = emptyList()

@@ -21,6 +21,7 @@ fun PositionSelectionSection(
     selectedPlace: PlaceItem?,
     customLocationName: String?,
     isExifAutoDetected: Boolean,
+    isExifMissing: Boolean = false,
     placeSearchQuery: String,
     placeSearchResults: List<PlaceItem>,
     isSearchingPlaces: Boolean,
@@ -183,6 +184,13 @@ fun PositionSelectionSection(
                 ) {
                     Text("Use \"$placeSearchQuery\" as location name")
                 }
+            } else if (isExifMissing && !hasSelection) {
+                Text(
+                    text = "No EXIF location metadata found in selected photo(s)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
             }
         }
     }

@@ -78,6 +78,7 @@ fun UploadScreen(
     val selectedPlace by viewModel.selectedPlace.collectAsState()
     val customLocationName by viewModel.customLocationName.collectAsState()
     val isExifAutoDetected by viewModel.isExifAutoDetected.collectAsState()
+    val isExifMissing by viewModel.isExifMissing.collectAsState()
     val placeSearchQuery by viewModel.placeSearchQuery.collectAsState()
     val placeSearchResults by viewModel.placeSearchResults.collectAsState()
     val isSearchingPlaces by viewModel.isSearchingPlaces.collectAsState()
@@ -119,6 +120,7 @@ fun UploadScreen(
         selectedPlace = selectedPlace,
         customLocationName = customLocationName,
         isExifAutoDetected = isExifAutoDetected,
+        isExifMissing = isExifMissing,
         placeSearchQuery = placeSearchQuery,
         placeSearchResults = placeSearchResults,
         isSearchingPlaces = isSearchingPlaces,
@@ -174,6 +176,7 @@ fun UploadContent(
     selectedPlace: PlaceItem? = null,
     customLocationName: String? = null,
     isExifAutoDetected: Boolean = false,
+    isExifMissing: Boolean = false,
     placeSearchQuery: String = "",
     placeSearchResults: List<PlaceItem> = emptyList(),
     isSearchingPlaces: Boolean = false,
@@ -410,6 +413,7 @@ fun UploadContent(
                         selectedPlace = selectedPlace,
                         customLocationName = customLocationName,
                         isExifAutoDetected = isExifAutoDetected,
+                        isExifMissing = isExifMissing,
                         placeSearchQuery = placeSearchQuery,
                         placeSearchResults = placeSearchResults,
                         isSearchingPlaces = isSearchingPlaces,
