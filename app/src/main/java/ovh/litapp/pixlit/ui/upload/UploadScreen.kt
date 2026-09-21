@@ -26,6 +26,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import ovh.litapp.pixlit.data.api.CollectionItem
+import ovh.litapp.pixlit.data.api.PlaceItem
 import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.data.api.toSafeString
@@ -74,6 +75,14 @@ fun UploadScreen(
     val selectedCollectionIds by viewModel.selectedCollectionIds.collectAsState()
     val isLoadingCollections by viewModel.isLoadingCollections.collectAsState()
 
+    val selectedPlace by viewModel.selectedPlace.collectAsState()
+    val customLocationName by viewModel.customLocationName.collectAsState()
+    val isExifAutoDetected by viewModel.isExifAutoDetected.collectAsState()
+    val isExifMissing by viewModel.isExifMissing.collectAsState()
+    val placeSearchQuery by viewModel.placeSearchQuery.collectAsState()
+    val placeSearchResults by viewModel.placeSearchResults.collectAsState()
+    val isSearchingPlaces by viewModel.isSearchingPlaces.collectAsState()
+
     LaunchedEffect(prefillTheme) {
         if (prefillTheme != null) {
             viewModel.prefillArtShowTags(prefillTheme)
@@ -108,7 +117,18 @@ fun UploadScreen(
         userCollections = userCollections,
         selectedCollectionIds = selectedCollectionIds,
         isLoadingCollections = isLoadingCollections,
+        selectedPlace = selectedPlace,
+        customLocationName = customLocationName,
+        isExifAutoDetected = isExifAutoDetected,
+        isExifMissing = isExifMissing,
+        placeSearchQuery = placeSearchQuery,
+        placeSearchResults = placeSearchResults,
+        isSearchingPlaces = isSearchingPlaces,
         onLogout = onLogout,
+        onPlaceQueryChanged = { viewModel.onPlaceSearchQueryChanged(it) },
+        onSelectPlace = { viewModel.selectPlace(it) },
+        onSetCustomLocation = { viewModel.setCustomLocation(it) },
+        onClearLocation = { viewModel.clearLocation() },
         onCollectionToggle = { viewModel.toggleCollectionSelection(it) },
         onCreateCollection = { title, desc -> viewModel.createAndSelectCollection(title, desc) },
         onPageChanged = { viewModel.onPageChanged(it) },
@@ -153,7 +173,18 @@ fun UploadContent(
     userCollections: List<CollectionItem> = emptyList(),
     selectedCollectionIds: Set<String> = emptySet(),
     isLoadingCollections: Boolean = false,
+    selectedPlace: PlaceItem? = null,
+    customLocationName: String? = null,
+    isExifAutoDetected: Boolean = false,
+    isExifMissing: Boolean = false,
+    placeSearchQuery: String = "",
+    placeSearchResults: List<PlaceItem> = emptyList(),
+    isSearchingPlaces: Boolean = false,
     onLogout: () -> Unit = {},
+    onPlaceQueryChanged: (String) -> Unit = {},
+    onSelectPlace: (PlaceItem) -> Unit = {},
+    onSetCustomLocation: (String) -> Unit = {},
+    onClearLocation: () -> Unit = {},
     onCollectionToggle: (String) -> Unit = {},
     onCreateCollection: (String, String?) -> Unit = { _, _ -> },
     onPageChanged: (Int) -> Unit = {},
@@ -376,7 +407,23 @@ fun UploadContent(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    PositionSelectionSection(
+                        selectedPlace = selectedPlace,
+                        customLocationName = customLocationName,
+                        isExifAutoDetected = isExifAutoDetected,
+                        isExifMissing = isExifMissing,
+                        placeSearchQuery = placeSearchQuery,
+                        placeSearchResults = placeSearchResults,
+                        isSearchingPlaces = isSearchingPlaces,
+                        onQueryChanged = onPlaceQueryChanged,
+                        onSelectPlace = onSelectPlace,
+                        onSetCustomLocation = onSetCustomLocation,
+                        onClearLocation = onClearLocation
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     TagSelectionCloud(
                         topTags = topTags,

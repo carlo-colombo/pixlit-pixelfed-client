@@ -19,6 +19,7 @@ import com.google.gson.reflect.TypeToken
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -159,16 +160,18 @@ class PixelfedRepository @Inject constructor(
         imageUri: Uri,
         caption: String,
         resizeTo8Mb: Boolean = false,
-        collectionIds: List<String> = emptyList()
+        collectionIds: List<String> = emptyList(),
+        placeId: String? = null
     ): Result<StatusResponse> {
-        return uploadPhotosAndCreateStatus(listOf(imageUri), caption, resizeTo8Mb, collectionIds)
+        return uploadPhotosAndCreateStatus(listOf(imageUri), caption, resizeTo8Mb, collectionIds, placeId)
     }
 
     suspend fun uploadPhotosAndCreateStatus(
         imageUris: List<Uri>,
         caption: String,
         resizeTo8Mb: Boolean = false,
-        collectionIds: List<String> = emptyList()
+        collectionIds: List<String> = emptyList(),
+        placeId: String? = null
     ): Result<StatusResponse> = withContext(Dispatchers.IO) {
         if (imageUris.isEmpty()) {
             return@withContext Result.failure(Exception("No images selected for upload"))
@@ -211,7 +214,8 @@ class PixelfedRepository @Inject constructor(
             val statusResponse = api.createStatus(
                 authHeader = "Bearer $accessToken",
                 status = caption,
-                mediaIds = mediaIds
+                mediaIds = mediaIds,
+                placeId = placeId
             )
 
             if (statusResponse.isSuccessful && statusResponse.body() != null) {
@@ -235,6 +239,35 @@ class PixelfedRepository @Inject constructor(
                 Result.failure(Exception("Status creation failed: ${statusResponse.code()} ${statusResponse.errorBody()?.string()}"))
             }
         } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun searchPlaces(
+        query: String? = null,
+        lat: Double? = null,
+        lng: Double? = null
+    ): Result<List<ovh.litapp.pixlit.data.api.PlaceItem>> = withContext(Dispatchers.IO) {
+        val instanceUrl = tokenManager.instanceUrl ?: "https://pixelfed.social"
+        val accessToken = tokenManager.accessToken
+        try {
+            val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
+            val authHeader = accessToken?.let { "Bearer $it" }
+            val response = withTimeoutOrNull(8_000L) {
+                api.searchPlaces(
+                    authHeader = authHeader,
+                    query = query,
+                    lat = lat,
+                    lng = lng
+                )
+            } ?: return@withContext Result.failure(Exception("Place search timed out"))
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                Result.success(emptyList())
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "searchPlaces failed", e)
             Result.failure(e)
         }
     }

@@ -9,6 +9,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import ovh.litapp.pixlit.data.api.CollectionItem
+import ovh.litapp.pixlit.data.api.PlaceItem
 import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.api.StatusResponse
 import com.google.gson.JsonPrimitive
@@ -18,9 +19,12 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.data.repository.TagCount
 
+@RunWith(RobolectricTestRunner::class)
 @OptIn(ExperimentalCoroutinesApi::class)
 class UploadViewModelTest {
 
@@ -154,7 +158,8 @@ class UploadViewModelTest {
                 imageUris = any(),
                 caption = any(),
                 resizeTo8Mb = any(),
-                collectionIds = any()
+                collectionIds = any(),
+                placeId = any()
             )
         } returns Result.success(StatusResponse(id = JsonPrimitive("123")))
 
@@ -166,7 +171,8 @@ class UploadViewModelTest {
                 imageUris = listOf(uri1),
                 caption = "",
                 resizeTo8Mb = false,
-                collectionIds = match { it.containsAll(listOf("col1", "col2")) && it.size == 2 }
+                collectionIds = match { it.containsAll(listOf("col1", "col2")) && it.size == 2 },
+                placeId = null
             )
         }
         assertEquals(emptySet<String>(), viewModel.selectedCollectionIds.value)
@@ -188,5 +194,83 @@ class UploadViewModelTest {
         coVerify { repository.getUserTopTagsAndPosts(forceRefresh = true) }
         assertEquals(listOf(updatedStatus), viewModel.recentStatuses.value)
         assertEquals(false, viewModel.isRefreshing.value)
+    }
+
+    @Test
+    fun `selectPlace updates selectedPlace and clears custom location`() = runTest {
+        val place = PlaceItem(id = JsonPrimitive("p1"), name = "Rome", country = "Italy")
+        viewModel.selectPlace(place)
+
+        assertEquals(place, viewModel.selectedPlace.value)
+        assertEquals(null, viewModel.customLocationName.value)
+        assertEquals(false, viewModel.isExifAutoDetected.value)
+    }
+
+    @Test
+    fun `setCustomLocation updates customLocationName and clears selectedPlace`() = runTest {
+        val place = PlaceItem(id = JsonPrimitive("p1"), name = "Rome", country = "Italy")
+        viewModel.selectPlace(place)
+
+        viewModel.setCustomLocation("Milano")
+
+        assertEquals(null, viewModel.selectedPlace.value)
+        assertEquals("Milano", viewModel.customLocationName.value)
+        assertEquals(false, viewModel.isExifAutoDetected.value)
+    }
+
+    @Test
+    fun `clearLocation clears all position selection state`() = runTest {
+        val place = PlaceItem(id = JsonPrimitive("p1"), name = "Rome", country = "Italy")
+        viewModel.selectPlace(place)
+
+        viewModel.clearLocation()
+
+        assertEquals(null, viewModel.selectedPlace.value)
+        assertEquals(null, viewModel.customLocationName.value)
+        assertEquals(false, viewModel.isExifAutoDetected.value)
+    }
+
+    @Test
+    fun `onPlaceSearchQueryChanged performs debounced place search`() = runTest {
+        val places = listOf(PlaceItem(id = JsonPrimitive("p10"), name = "Florence", country = "Italy"))
+        coEvery { repository.searchPlaces(query = "Flor", lat = null, lng = null) } returns Result.success(places)
+
+        viewModel.onPlaceSearchQueryChanged("Flor")
+        advanceTimeBy(301)
+        advanceUntilIdle()
+
+        assertEquals(places, viewModel.placeSearchResults.value)
+    }
+
+    @Test
+    fun `upload with selected place passes placeId to repository`() = runTest {
+        val uri1 = mockk<Uri>(relaxed = true)
+        viewModel.addImages(listOf(uri1))
+
+        val place = PlaceItem(id = JsonPrimitive("place_99"), name = "Naples")
+        viewModel.selectPlace(place)
+
+        coEvery {
+            repository.uploadPhotosAndCreateStatus(
+                imageUris = any(),
+                caption = any(),
+                resizeTo8Mb = any(),
+                collectionIds = any(),
+                placeId = any()
+            )
+        } returns Result.success(StatusResponse(id = JsonPrimitive("status_123")))
+
+        viewModel.upload()
+        advanceUntilIdle()
+
+        coVerify {
+            repository.uploadPhotosAndCreateStatus(
+                imageUris = listOf(uri1),
+                caption = "",
+                resizeTo8Mb = false,
+                collectionIds = emptyList(),
+                placeId = "place_99"
+            )
+        }
     }
 }
