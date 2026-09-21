@@ -51,4 +51,14 @@ class TokenManagerTest {
         assertEquals(null, tokenManager.clientId)
         assertEquals(null, tokenManager.clientSecret)
     }
+
+    @Test
+    fun testTagSearchCachePersists() {
+        tokenManager.tagSearchCacheJson = "{\"pixelfed.social|photo\":{}}"
+
+        assertEquals("{\"pixelfed.social|photo\":{}}", tokenManager.tagSearchCacheJson)
+
+        tokenManager.clear()
+        assertEquals(null, tokenManager.tagSearchCacheJson)
+    }
 }

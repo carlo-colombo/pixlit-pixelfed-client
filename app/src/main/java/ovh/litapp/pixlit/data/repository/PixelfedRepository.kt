@@ -35,6 +35,10 @@ import javax.inject.Singleton
 
 data class TagCount(val name: String, val count: Int)
 
+private data class CachedTagSearch(
+    val names: List<String>
+)
+
 private const val MAX_DISPLAYED_TAGS = 30
 
 @Singleton
@@ -514,6 +518,48 @@ class PixelfedRepository @Inject constructor(
 
     suspend fun getUserTopTags(forceRefresh: Boolean = false): Result<List<String>> {
         return getUserTopTagsAndPosts(forceRefresh).map { result -> result.topTags.map { it.name } }
+    }
+
+    suspend fun searchTags(query: String): Result<List<String>> = withContext(Dispatchers.IO) {
+        val normalizedQuery = query.trim().removePrefix("#").lowercase()
+        if (normalizedQuery.isBlank()) return@withContext Result.success(emptyList())
+
+        val instanceUrl = tokenManager.instanceUrl
+        val cacheKey = "${instanceUrl.orEmpty()}|$normalizedQuery"
+        val cacheType = object : TypeToken<MutableMap<String, CachedTagSearch>>() {}.type
+        val cache = runCatching {
+            gson.fromJson<MutableMap<String, CachedTagSearch>>(
+                tokenManager.tagSearchCacheJson,
+                cacheType
+            ) ?: mutableMapOf()
+        }.getOrElse { mutableMapOf() }
+        val cached = cache[cacheKey]
+        if (cached != null) {
+            return@withContext Result.success(cached.names)
+        }
+
+        if (instanceUrl.isNullOrBlank()) return@withContext Result.failure(Exception("Not logged in"))
+
+        try {
+            val response = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
+                .searchHashtags(
+                    authHeader = tokenManager.accessToken?.let { "Bearer $it" },
+                    query = normalizedQuery
+                )
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(Exception("Tag search failed: ${response.code()}"))
+            }
+
+            val names = response.body()?.hashtags.orEmpty()
+                .mapNotNull { it.name?.trim()?.removePrefix("#")?.takeIf(String::isNotBlank) }
+                .distinctBy(String::lowercase)
+            cache[cacheKey] = CachedTagSearch(names)
+            tokenManager.tagSearchCacheJson = gson.toJson(cache, cacheType)
+            Result.success(names)
+        } catch (e: Exception) {
+            Log.e(TAG, "searchTags failed", e)
+            Result.failure(e)
+        }
     }
 
     companion object {

@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -32,6 +34,10 @@ class UploadViewModel @Inject constructor(
 
     private val _captionState = MutableStateFlow(TextFieldValue(""))
     val captionState = _captionState.asStateFlow()
+
+    private val _remoteTagSuggestions = MutableStateFlow<List<String>>(emptyList())
+    val remoteTagSuggestions = _remoteTagSuggestions.asStateFlow()
+    private var tagSearchJob: Job? = null
 
     private val _resizeTo8Mb = MutableStateFlow(false)
     val resizeTo8Mb = _resizeTo8Mb.asStateFlow()
@@ -420,6 +426,38 @@ class UploadViewModel @Inject constructor(
 
     fun onCaptionChanged(newValue: TextFieldValue) {
         _captionState.value = newValue
+        val context = findHashtagContext(newValue)
+        tagSearchJob?.cancel()
+        if (context == null || context.query.length < 2) {
+            _remoteTagSuggestions.value = emptyList()
+            return
+        }
+
+        searchTagSuggestions(context.query)
+    }
+
+    fun searchTagSuggestions(query: String) {
+        tagSearchJob?.cancel()
+        if (query.length < 2) {
+            _remoteTagSuggestions.value = emptyList()
+            return
+        }
+
+        tagSearchJob = viewModelScope.launch {
+            delay(300)
+            val result = repository.searchTags(query)
+            _remoteTagSuggestions.value = result.getOrDefault(emptyList())
+        }
+    }
+
+    fun insertHash() {
+        val current = _captionState.value
+        val start = current.selection.min.coerceIn(0, current.text.length)
+        val end = current.selection.max.coerceIn(start, current.text.length)
+        val newText = current.text.substring(0, start) + "#" + current.text.substring(end)
+        onCaptionChanged(
+            TextFieldValue(newText, TextRange(start + 1))
+        )
     }
 
     fun onResizeToggled(enabled: Boolean) {
@@ -443,6 +481,20 @@ class UploadViewModel @Inject constructor(
         _captionState.value = TextFieldValue(
             text = newText,
             selection = TextRange(newCursorPos)
+        )
+    }
+
+    fun insertTagSuggestion(tagString: String) {
+        val tagName = tagString.trim().removePrefix("#").split(" ").firstOrNull().orEmpty()
+        val context = findHashtagContext(_captionState.value) ?: return
+        if (tagName.isEmpty()) return
+
+        val current = _captionState.value
+        val replacement = "#$tagName "
+        val newText = current.text.replaceRange(context.start, context.end, replacement)
+        _captionState.value = TextFieldValue(
+            text = newText,
+            selection = TextRange(context.start + replacement.length)
         )
     }
 
@@ -517,3 +569,26 @@ class UploadViewModel @Inject constructor(
         }
     }
 }
+
+data class HashtagContext(val query: String, val start: Int, val end: Int)
+
+fun findHashtagContext(value: TextFieldValue): HashtagContext? {
+    if (value.selection.start != value.selection.end) return null
+    val cursor = value.selection.max
+    if (cursor < 0 || cursor > value.text.length) return null
+
+    var hashStart = cursor - 1
+    while (hashStart >= 0 && value.text[hashStart].isHashtagCharacter()) hashStart--
+    if (hashStart < 0 || value.text[hashStart] != '#') return null
+    if (hashStart > 0 && value.text[hashStart - 1].isHashtagCharacter()) return null
+
+    var end = cursor
+    while (end < value.text.length && value.text[end].isHashtagCharacter()) end++
+    return HashtagContext(
+        query = value.text.substring(hashStart + 1, cursor),
+        start = hashStart,
+        end = end
+    )
+}
+
+private fun Char.isHashtagCharacter(): Boolean = isLetterOrDigit() || this == '_' || this == '-'

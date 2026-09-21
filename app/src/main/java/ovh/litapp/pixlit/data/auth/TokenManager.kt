@@ -17,6 +17,7 @@ class TokenManager @Inject constructor(@ApplicationContext context: Context) {
         private const val KEY_CLIENT_SECRET = "client_secret"
         private const val KEY_CACHED_TAGS = "cached_tags"
         private const val KEY_TAGS_CACHE_TIME = "tags_cache_time"
+        private const val KEY_TAG_SEARCH_CACHE = "tag_search_cache"
     }
 
     var cachedTagsJson: String?
@@ -29,6 +30,12 @@ class TokenManager @Inject constructor(@ApplicationContext context: Context) {
         get() = prefs.getLong(KEY_TAGS_CACHE_TIME, 0L)
         set(value) {
             prefs.edit().putLong(KEY_TAGS_CACHE_TIME, value).commit()
+        }
+
+    var tagSearchCacheJson: String?
+        get() = prefs.getString(KEY_TAG_SEARCH_CACHE, null)
+        set(value) {
+            prefs.edit().putString(KEY_TAG_SEARCH_CACHE, value).commit()
         }
 
     var instanceUrl: String?

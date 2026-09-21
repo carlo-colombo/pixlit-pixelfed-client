@@ -2,6 +2,8 @@ package ovh.litapp.pixlit.ui.upload
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import app.cash.turbine.test
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -110,6 +112,33 @@ class UploadViewModelTest {
     fun `insertTag updates caption correctly`() = runTest {
         viewModel.insertTag("#photography (12)")
         assertEquals("#photography ", viewModel.captionState.value.text)
+    }
+
+    @Test
+    fun `insertTagSuggestion replaces the hashtag being typed`() = runTest {
+        viewModel.onCaptionChanged(
+            TextFieldValue("A photo of #phot", TextRange("A photo of #phot".length))
+        )
+
+        viewModel.insertTagSuggestion("photography")
+
+        assertEquals("A photo of #photography ", viewModel.captionState.value.text)
+        assertEquals(
+            "A photo of #photography ".length,
+            viewModel.captionState.value.selection.start
+        )
+    }
+
+    @Test
+    fun `findHashtagContext ignores hashtags embedded in words`() {
+        assertEquals(
+            HashtagContext("phot", 0, 5),
+            findHashtagContext(TextFieldValue("#phot", TextRange(5)))
+        )
+        assertEquals(
+            null,
+            findHashtagContext(TextFieldValue("word#phot", TextRange(9)))
+        )
     }
 
     @Test

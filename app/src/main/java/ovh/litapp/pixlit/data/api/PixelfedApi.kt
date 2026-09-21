@@ -75,6 +75,14 @@ interface PixelfedApi {
         @Query("lng") lng: Double? = null
     ): Response<List<PlaceItem>>
 
+    @GET("api/v2/search")
+    suspend fun searchHashtags(
+        @Header("Authorization") authHeader: String? = null,
+        @Query("q") query: String,
+        @Query("type") type: String = "hashtags",
+        @Query("limit") limit: Int = 20
+    ): Response<HashtagSearchResponse>
+
     @GET("api/pixelfed/v1/accounts/{id}/collections")
     suspend fun getUserCollections(
         @Header("Authorization") authHeader: String,
@@ -166,6 +174,10 @@ data class AccountResponse(
 
 data class TagItem(
     @SerializedName("name") val name: String? = null
+)
+
+data class HashtagSearchResponse(
+    @SerializedName("hashtags") val hashtags: List<TagItem> = emptyList()
 )
 
 data class MediaAttachment(

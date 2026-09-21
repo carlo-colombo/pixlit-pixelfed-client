@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -18,12 +20,23 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
 import ovh.litapp.pixlit.data.api.CollectionItem
 import ovh.litapp.pixlit.data.api.PlaceItem
@@ -40,6 +53,28 @@ import ovh.litapp.pixlit.data.reminder.ReminderScheduler
 import java.time.LocalTime
 import ovh.litapp.pixlit.utils.ImageMetadata
 import ovh.litapp.pixlit.ui.social.SocialScreen
+
+private class CaptionSuggestionPositionProvider(
+    private val cursorX: Int
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize
+    ): IntOffset {
+        val requestedX = if (layoutDirection == LayoutDirection.Ltr) {
+            anchorBounds.left
+        } else {
+            anchorBounds.right - popupContentSize.width
+        }
+        val x = (requestedX + cursorX + 24).coerceIn(
+            0,
+            (windowSize.width - popupContentSize.width).coerceAtLeast(0)
+        )
+        return IntOffset(x, 8)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -62,6 +97,7 @@ fun UploadScreen(
     val statusMessage by viewModel.statusMessage.collectAsState()
     val isError by viewModel.isError.collectAsState()
     val topTags by viewModel.topTags.collectAsState()
+    val remoteTagSuggestions by viewModel.remoteTagSuggestions.collectAsState()
     val recentStatuses by viewModel.recentStatuses.collectAsState()
     val visibleRecentPostCount by viewModel.visibleRecentPostCount.collectAsState()
     val isLoadingMorePosts by viewModel.isLoadingMorePosts.collectAsState()
@@ -105,6 +141,7 @@ fun UploadScreen(
         statusMessage = statusMessage,
         isError = isError,
         topTags = topTags,
+        remoteTagSuggestions = remoteTagSuggestions,
         recentStatuses = recentStatuses,
         visibleRecentPostCount = visibleRecentPostCount,
         isLoadingMorePosts = isLoadingMorePosts,
@@ -138,6 +175,9 @@ fun UploadScreen(
         onRemoveImage = { viewModel.removeImageAt(it) },
         onResizeToggled = { viewModel.onResizeToggled(it) },
         onCaptionChanged = { viewModel.onCaptionChanged(it) },
+        onInsertHash = { viewModel.insertHash() },
+        onTagSearchQueryChanged = { viewModel.searchTagSuggestions(it) },
+        onTagSuggestionClick = { viewModel.insertTagSuggestion(it) },
         onTagClick = { viewModel.insertTag(it) },
         onSocialTagClick = { tags -> tags.forEach(viewModel::insertTag) },
         onCopyPost = { text -> viewModel.onCaptionChanged(TextFieldValue(text)) },
@@ -161,6 +201,7 @@ fun UploadContent(
     statusMessage: String?,
     isError: Boolean,
     topTags: List<TagCount>,
+    remoteTagSuggestions: List<String> = emptyList(),
     recentStatuses: List<StatusItem>,
     visibleRecentPostCount: Int = 10,
     isLoadingMorePosts: Boolean = false,
@@ -194,6 +235,9 @@ fun UploadContent(
     onRemoveImage: (Int) -> Unit = {},
     onResizeToggled: (Boolean) -> Unit = {},
     onCaptionChanged: (TextFieldValue) -> Unit = {},
+    onInsertHash: () -> Unit = {},
+    onTagSearchQueryChanged: (String) -> Unit = {},
+    onTagSuggestionClick: (String) -> Unit = {},
     onTagClick: (String) -> Unit = {},
     onSocialTagClick: (List<String>) -> Unit = {},
     onCopyPost: (String) -> Unit = {},
@@ -209,6 +253,19 @@ fun UploadContent(
     val tabs = listOf("Upload", "Social", "Last", "Debug", "Settings")
 
     val maxPhotos = 6
+    val uploadScrollState = rememberScrollState()
+    val captionBringIntoViewRequester = remember { BringIntoViewRequester() }
+    var captionFocused by remember { mutableStateOf(false) }
+    var showTagPopup by remember { mutableStateOf(false) }
+    val tagSearchFocusRequester = remember { FocusRequester() }
+    val density = LocalDensity.current
+
+    LaunchedEffect(captionFocused) {
+        if (captionFocused) {
+            kotlinx.coroutines.delay(100)
+            captionBringIntoViewRequester.bringIntoView()
+        }
+    }
     val pagerState = rememberPagerState(
         initialPage = 0,
         pageCount = { selectedImageUris.size }
@@ -230,6 +287,25 @@ fun UploadContent(
     ) { uris ->
         onAddImages(uris)
     }
+
+    val hashtagContext = findHashtagContext(captionState)
+    var tagSearchQuery by remember { mutableStateOf("") }
+    LaunchedEffect(hashtagContext?.start, hashtagContext?.end, hashtagContext?.query) {
+        tagSearchQuery = hashtagContext?.query.orEmpty()
+    }
+    LaunchedEffect(tagSearchQuery) {
+        if (hashtagContext != null) onTagSearchQueryChanged(tagSearchQuery)
+    }
+    LaunchedEffect(showTagPopup) {
+        if (showTagPopup) {
+            kotlinx.coroutines.delay(50)
+            tagSearchFocusRequester.requestFocus()
+        }
+    }
+    val tagSuggestions = (remoteTagSuggestions + topTags.map { it.name })
+        .filter { it.startsWith(tagSearchQuery, ignoreCase = true) }
+        .distinctBy { it.lowercase() }
+        .take(30)
 
     Scaffold(
         modifier = Modifier.systemBarsPadding(),
@@ -264,7 +340,7 @@ fun UploadContent(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(uploadScrollState)
                         .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 100.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Top
@@ -372,15 +448,98 @@ fun UploadContent(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    OutlinedTextField(
-                        value = captionState,
-                        onValueChange = { onCaptionChanged(it) },
-                        label = { Text("Write a caption...") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(240.dp),
-                        maxLines = 10
-                    )
+                    val cursor = captionState.selection.end.coerceIn(0, captionState.text.length)
+                    val textBeforeCursor = captionState.text.substring(0, cursor)
+                    val lineStart = textBeforeCursor.lastIndexOf('\n') + 1
+                    val lineCharacterCount = cursor - lineStart
+                    val cursorX = with(density) {
+                        (16.dp.toPx() + lineCharacterCount * 8.dp.toPx()).toInt()
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = captionState,
+                            onValueChange = { onCaptionChanged(it) },
+                            label = { Text("Write a caption...") },
+                            trailingIcon = {
+                                TextButton(
+                                    onClick = {
+                                        onInsertHash()
+                                        showTagPopup = true
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Text("#")
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(240.dp)
+                                .bringIntoViewRequester(captionBringIntoViewRequester)
+                                .onFocusChanged { captionFocused = it.isFocused },
+                            maxLines = 10
+                        )
+
+                        if (showTagPopup && hashtagContext != null) {
+                            Popup(
+                                onDismissRequest = { showTagPopup = false },
+                                popupPositionProvider = CaptionSuggestionPositionProvider(
+                                    cursorX = cursorX
+                                ),
+                                properties = PopupProperties(
+                                    focusable = true,
+                                    dismissOnBackPress = true,
+                                    dismissOnClickOutside = true
+                                )
+                            ) {
+                                Surface(
+                                    modifier = Modifier
+                                        .widthIn(min = 220.dp, max = 320.dp)
+                                        .heightIn(max = 240.dp)
+                                        .verticalScroll(rememberScrollState()),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                    shadowElevation = 8.dp,
+                                    tonalElevation = 4.dp,
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(8.dp)) {
+                                        OutlinedTextField(
+                                            value = tagSearchQuery,
+                                            onValueChange = { tagSearchQuery = it.removePrefix("#") },
+                                            placeholder = { Text("Search tags") },
+                                            singleLine = true,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .focusRequester(tagSearchFocusRequester)
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        if (tagSuggestions.isEmpty()) {
+                                            Text(
+                                                text = "No matching tags",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.padding(8.dp)
+                                            )
+                                        } else {
+                                            tagSuggestions.forEach { tag ->
+                                                Text(
+                                                    text = "#$tag",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            showTagPopup = false
+                                                            onTagSuggestionClick(tag)
+                                                        }
+                                                        .padding(horizontal = 8.dp, vertical = 10.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(4.dp))
 
