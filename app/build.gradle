@@ -9,9 +9,6 @@ android {
     namespace = 'ovh.litapp.pixlit'
     compileSdk 37
 
-    def isCiMain = System.getenv("GITHUB_ACTIONS") == "true" && System.getenv("GITHUB_REF") == "refs/heads/main"
-    def buildSuffix = isCiMain ? "" : " (Internal)"
-
     defaultConfig {
         applicationId "ovh.litapp.pixlit"
         minSdk 34
@@ -24,23 +21,28 @@ android {
             useSupportLibrary = true
         }
 
-        manifestPlaceholders = [
-            appAuthRedirectScheme: "pixlit",
-            appLabel: "Pixlit" + buildSuffix
-        ]
+        manifestPlaceholders = [appAuthRedirectScheme: "pixlit", appLabel: "Pixlit"]
     }
 
-    flavorDimensions = ["env"]
+    flavorDimensions = ["distribution", "env"]
     productFlavors {
+        local {
+            dimension "distribution"
+            applicationIdSuffix ".local"
+            manifestPlaceholders.appLabel = "Pixlit (Internal)"
+        }
+        ci {
+            dimension "distribution"
+        }
         dev {
             dimension "env"
             applicationIdSuffix ".dev"
-            manifestPlaceholders.appLabel = "Pixlit Dev" + buildSuffix
+            manifestPlaceholders.appLabel = "Pixlit Dev"
             manifestPlaceholders.appAuthRedirectScheme = "pixlit-dev"
         }
         prod {
             dimension "env"
-            manifestPlaceholders.appLabel = "Pixlit" + buildSuffix
+            manifestPlaceholders.appLabel = "Pixlit"
         }
     }
 
@@ -77,7 +79,7 @@ android {
 
 // Keep the conventional test task usable while local builds default to dev.
 tasks.register("testDebugUnitTest") {
-    dependsOn("testDevDebugUnitTest")
+    dependsOn("testLocalDevDebugUnitTest")
 }
 
 dependencies {

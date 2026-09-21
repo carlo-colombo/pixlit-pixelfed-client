@@ -61,15 +61,15 @@ git clone https://github.com/carlo-colombo/pixlit-pixelfed-client.git
 cd pixlit-pixelfed-client
 ```
 
-The app has two product flavors:
+The app has local and CI distribution variants, plus `dev` and `prod` environment flavors:
 
 ```bash
-./gradlew assembleDevDebug   # Local development build, labeled "Pixlit Dev"
-./gradlew assembleProdDebug  # Production-flavor debug build
-./gradlew assembleProdRelease
+./gradlew assembleLocalDevDebug   # Local development build, labeled "Pixlit Dev (Internal)"
+./gradlew assembleLocalProdDebug  # Local production-flavor debug build
+./gradlew assembleCiProdRelease   # CI production build
 ```
 
-The dev flavor shows a `DEV BUILD` banner and uses a separate application ID and OAuth redirect scheme. Release builds enable code and resource shrinking.
+The dev flavor shows a `DEV BUILD` banner and uses a separate application ID and OAuth redirect scheme. Local builds use a `.local` application ID suffix, so they can be installed alongside APKs built by GitHub Actions. Release builds enable code and resource shrinking.
 
 On first launch, enter a Pixelfed instance URL and choose **Log In with Pixlit**. Pixlit opens the instance's OAuth page in a browser Custom Tab and handles the callback in the app. Android 13 and newer also require notification permission for Art Show reminders.
 
@@ -78,7 +78,7 @@ On first launch, enter a Pixelfed instance URL and choose **Log In with Pixlit**
 Run the unit tests with:
 
 ```bash
-./gradlew testDevDebugUnitTest
+./gradlew testLocalDevDebugUnitTest
 ```
 
 Tests cover OAuth parsing and token storage, tag extraction and counts, image utilities, upload state, Bluesky theme/challenge parsing, reminder scheduling, and notification prefill behavior.

@@ -52,16 +52,16 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "FLAVOR=dev" >> $GITHUB_ENV
-            echo "ASSEMBLE_TASK=assembleDevRelease" >> $GITHUB_ENV
-            echo "RELEASE_DIR=app/build/outputs/apk/dev/release" >> $GITHUB_ENV
-            echo "APK_PREFIX=app-dev-release" >> $GITHUB_ENV
-            echo "release_dir=app/build/outputs/apk/dev/release" >> $GITHUB_OUTPUT
+            echo "ASSEMBLE_TASK=assembleCiDevRelease" >> $GITHUB_ENV
+            echo "RELEASE_DIR=app/build/outputs/apk/ciDev/release" >> $GITHUB_ENV
+            echo "APK_PREFIX=app-ci-dev-release" >> $GITHUB_ENV
+            echo "release_dir=app/build/outputs/apk/ciDev/release" >> $GITHUB_OUTPUT
           else
             echo "FLAVOR=prod" >> $GITHUB_ENV
-            echo "ASSEMBLE_TASK=assembleProdRelease" >> $GITHUB_ENV
-            echo "RELEASE_DIR=app/build/outputs/apk/prod/release" >> $GITHUB_ENV
-            echo "APK_PREFIX=app-prod-release" >> $GITHUB_ENV
-            echo "release_dir=app/build/outputs/apk/prod/release" >> $GITHUB_OUTPUT
+            echo "ASSEMBLE_TASK=assembleCiProdRelease" >> $GITHUB_ENV
+            echo "RELEASE_DIR=app/build/outputs/apk/ciProd/release" >> $GITHUB_ENV
+            echo "APK_PREFIX=app-ci-prod-release" >> $GITHUB_ENV
+            echo "release_dir=app/build/outputs/apk/ciProd/release" >> $GITHUB_OUTPUT
           fi
 
       - name: Assemble APK
