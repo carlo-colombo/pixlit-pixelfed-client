@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ovh.litapp.pixlit.data.api.CollectionItem
+import ovh.litapp.pixlit.data.api.PlaceItem
 import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.utils.ImageMetadata
@@ -83,6 +84,27 @@ class UploadViewModel @Inject constructor(
     private val _isCalculatingResized = MutableStateFlow(false)
     val isCalculatingResized = _isCalculatingResized.asStateFlow()
 
+    private val _selectedPlace = MutableStateFlow<PlaceItem?>(null)
+    val selectedPlace = _selectedPlace.asStateFlow()
+
+    private val _customLocationName = MutableStateFlow<String?>(null)
+    val customLocationName = _customLocationName.asStateFlow()
+
+    private val _isExifAutoDetected = MutableStateFlow(false)
+    val isExifAutoDetected = _isExifAutoDetected.asStateFlow()
+
+    private val _placeSearchQuery = MutableStateFlow("")
+    val placeSearchQuery = _placeSearchQuery.asStateFlow()
+
+    private val _placeSearchResults = MutableStateFlow<List<PlaceItem>>(emptyList())
+    val placeSearchResults = _placeSearchResults.asStateFlow()
+
+    private val _isSearchingPlaces = MutableStateFlow(false)
+    val isSearchingPlaces = _isSearchingPlaces.asStateFlow()
+
+    private var placeSearchJob: kotlinx.coroutines.Job? = null
+    private var isUserLocationSelectionManual = false
+
     init {
         // Load the real account history so the recent-posts section is useful on first render.
         fetchTags(forceRefresh = true)
@@ -104,6 +126,114 @@ class UploadViewModel @Inject constructor(
                 _resizedMetadata.value = null
             }
         }.launchIn(viewModelScope)
+
+        _selectedImageUris.onEach { uris ->
+            if (uris.isEmpty()) {
+                if (!isUserLocationSelectionManual) {
+                    _selectedPlace.value = null
+                    _customLocationName.value = null
+                    _isExifAutoDetected.value = false
+                }
+            } else if (!isUserLocationSelectionManual && _selectedPlace.value == null && _customLocationName.value == null) {
+                detectExifLocation(uris)
+            }
+        }.launchIn(viewModelScope)
+    }
+
+    fun detectExifLocation(uris: List<Uri>) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                for (uri in uris) {
+                    try {
+                        val coords = ImageUtils.extractExifLocation(context, uri)
+                        if (coords != null) {
+                            val (lat, lng) = coords
+                            _isSearchingPlaces.value = true
+                            val result = repository.searchPlaces(lat = lat, lng = lng)
+                            _isSearchingPlaces.value = false
+                            result.fold(
+                                onSuccess = { places ->
+                                    if (places.isNotEmpty()) {
+                                        _selectedPlace.value = places.first()
+                                        _customLocationName.value = null
+                                        _isExifAutoDetected.value = true
+                                    } else {
+                                        val formatted = String.format(java.util.Locale.US, "%.4f, %.4f", lat, lng)
+                                        _customLocationName.value = formatted
+                                        _selectedPlace.value = null
+                                        _isExifAutoDetected.value = true
+                                    }
+                                },
+                                onFailure = {
+                                    val formatted = String.format(java.util.Locale.US, "%.4f, %.4f", lat, lng)
+                                    _customLocationName.value = formatted
+                                    _selectedPlace.value = null
+                                    _isExifAutoDetected.value = true
+                                }
+                            )
+                            break
+                        }
+                    } catch (e: Exception) {
+                        Log.e("UploadViewModel", "EXIF location detection failed", e)
+                    }
+                }
+            }
+        }
+    }
+
+    fun onPlaceSearchQueryChanged(query: String) {
+        _placeSearchQuery.value = query
+        placeSearchJob?.cancel()
+        if (query.isBlank()) {
+            _placeSearchResults.value = emptyList()
+            _isSearchingPlaces.value = false
+            return
+        }
+        placeSearchJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(300)
+            _isSearchingPlaces.value = true
+            val result = repository.searchPlaces(query = query.trim())
+            result.fold(
+                onSuccess = { places ->
+                    _placeSearchResults.value = places
+                },
+                onFailure = {
+                    _placeSearchResults.value = emptyList()
+                }
+            )
+            _isSearchingPlaces.value = false
+        }
+    }
+
+    fun selectPlace(place: PlaceItem) {
+        _selectedPlace.value = place
+        _customLocationName.value = null
+        _isExifAutoDetected.value = false
+        _placeSearchQuery.value = ""
+        _placeSearchResults.value = emptyList()
+        isUserLocationSelectionManual = true
+    }
+
+    fun setCustomLocation(name: String) {
+        if (name.isBlank()) {
+            clearLocation()
+            return
+        }
+        _selectedPlace.value = null
+        _customLocationName.value = name.trim()
+        _isExifAutoDetected.value = false
+        _placeSearchQuery.value = ""
+        _placeSearchResults.value = emptyList()
+        isUserLocationSelectionManual = true
+    }
+
+    fun clearLocation() {
+        _selectedPlace.value = null
+        _customLocationName.value = null
+        _isExifAutoDetected.value = false
+        _placeSearchQuery.value = ""
+        _placeSearchResults.value = emptyList()
+        isUserLocationSelectionManual = true
     }
 
     private fun updateMetadata(uri: Uri, resize: Boolean) {
@@ -343,11 +473,21 @@ class UploadViewModel @Inject constructor(
 
         viewModelScope.launch {
             val collectionsToAssign = _selectedCollectionIds.value.toList()
+            val placeIdToPass = _selectedPlace.value?.getIdString()
+            var captionToUse = _captionState.value.text
+            if (placeIdToPass == null && !_customLocationName.value.isNullOrBlank()) {
+                val locText = _customLocationName.value!!
+                if (!captionToUse.contains(locText)) {
+                    captionToUse = if (captionToUse.isBlank()) "📍 $locText" else "$captionToUse\n📍 $locText"
+                }
+            }
+
             val result = repository.uploadPhotosAndCreateStatus(
                 imageUris = uris,
-                caption = _captionState.value.text,
+                caption = captionToUse,
                 resizeTo8Mb = _resizeTo8Mb.value,
-                collectionIds = collectionsToAssign
+                collectionIds = collectionsToAssign,
+                placeId = placeIdToPass
             )
             _isUploading.value = false
             result.fold(
@@ -360,6 +500,12 @@ class UploadViewModel @Inject constructor(
                     _selectedImageUris.value = emptyList()
                     _captionState.value = TextFieldValue("")
                     _selectedCollectionIds.value = emptySet()
+                    _selectedPlace.value = null
+                    _customLocationName.value = null
+                    _isExifAutoDetected.value = false
+                    isUserLocationSelectionManual = false
+                    _placeSearchQuery.value = ""
+                    _placeSearchResults.value = emptyList()
                 },
                 onFailure = { ex ->
                     val msg = ex.localizedMessage ?: ex.message ?: ex.toString()

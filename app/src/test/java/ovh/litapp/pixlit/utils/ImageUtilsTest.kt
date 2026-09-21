@@ -115,6 +115,25 @@ class ImageUtilsTest {
     }
 
     @Test
+    fun testExtractExifLocation() {
+        val fileWithGps = createTestImageFile(500, 500, "gps_test.jpg")
+        val exif = ExifInterface(fileWithGps.absolutePath)
+        exif.setLatLong(41.8902, 12.4922)
+        exif.saveAttributes()
+
+        val uriWithGps = Uri.fromFile(fileWithGps)
+        val location = ImageUtils.extractExifLocation(context, uriWithGps)
+        assertNotNull(location)
+        assertEquals(41.8902, location!!.first, 0.0001)
+        assertEquals(12.4922, location.second, 0.0001)
+
+        val fileNoGps = createTestImageFile(500, 500, "no_gps_test.jpg")
+        val uriNoGps = Uri.fromFile(fileNoGps)
+        val noLocation = ImageUtils.extractExifLocation(context, uriNoGps)
+        assertNull(noLocation)
+    }
+
+    @Test
     fun testExifOrientationDimensionsAndResize() {
         // Create an image where raw pixel dims are 2000x1000 (landscape), but EXIF orientation is ROTATE_90 (vertical/portrait)
         val file = createTestImageFile(2000, 1000, "vertical_exif.jpg")

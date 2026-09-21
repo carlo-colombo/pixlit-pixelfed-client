@@ -63,8 +63,17 @@ interface PixelfedApi {
     suspend fun createStatus(
         @Header("Authorization") authHeader: String,
         @Field("status") status: String,
-        @Field("media_ids[]") mediaIds: List<String>
+        @Field("media_ids[]") mediaIds: List<String>,
+        @Field("place_id") placeId: String? = null
     ): Response<StatusResponse>
+
+    @GET("api/v1/places/search")
+    suspend fun searchPlaces(
+        @Header("Authorization") authHeader: String? = null,
+        @Query("q") query: String? = null,
+        @Query("lat") lat: Double? = null,
+        @Query("lng") lng: Double? = null
+    ): Response<List<PlaceItem>>
 
     @GET("api/pixelfed/v1/accounts/{id}/collections")
     suspend fun getUserCollections(
@@ -179,6 +188,22 @@ data class StatusItem(
     @SerializedName("reblogs_count") val reblogsCount: Int = 0
 ) {
     fun getIdString(): String? = id.toSafeString()
+}
+
+data class PlaceItem(
+    @SerializedName("id") val id: JsonElement? = null,
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("slug") val slug: String? = null,
+    @SerializedName("country") val country: String? = null,
+    @SerializedName("lat") val lat: Double? = null,
+    @SerializedName("lng") val lng: Double? = null
+) {
+    fun getIdString(): String? = id.toSafeString()
+    fun getDisplayName(): String {
+        val n = name?.takeIf { it.isNotBlank() } ?: "Unknown Place"
+        val c = country?.takeIf { it.isNotBlank() }
+        return if (c != null) "$n, $c" else n
+    }
 }
 
 data class StatusResponse(

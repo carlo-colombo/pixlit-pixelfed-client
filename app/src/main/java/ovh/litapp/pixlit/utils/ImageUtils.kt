@@ -128,6 +128,23 @@ object ImageUtils {
         }
     }
 
+    fun extractExifLocation(context: Context, uri: Uri): Pair<Double, Double>? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                val exif = ExifInterface(stream)
+                val latLong = exif.latLong
+                if (latLong != null && latLong.size >= 2) {
+                    Pair(latLong[0], latLong[1])
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
     private fun getExifOrientation(context: Context, uri: Uri): Int {
         return try {
             context.contentResolver.openInputStream(uri)?.use { stream ->
