@@ -73,6 +73,8 @@ android {
         unitTests.all {
             maxHeapSize = "2048m"
             jvmArgs "-Xshare:off"
+            systemProperty "robolectric.dependency.repo.id", "custom"
+            systemProperty "robolectric.dependency.repo.url", "https://maven-central.storage-download.googleapis.com/maven2/"
         }
     }
 }

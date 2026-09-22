@@ -53,4 +53,26 @@ class BlueskyArtShowRepositoryTest {
             assertTrue("Tags for $dayName should not be empty", tags!!.isNotEmpty())
         }
     }
+
+    @Test fun `converts AT URI to Bluesky post web URL`() {
+        assertEquals(
+            "https://bsky.app/profile/did:plc:12345/post/3kabc123",
+            atUriToPostUrl("at://did:plc:12345/app.bsky.feed.post/3kabc123")
+        )
+        assertEquals(
+            "https://bsky.app/profile/handcranked.bsky.social/post/3kabc123",
+            atUriToPostUrl("at://handcranked.bsky.social/app.bsky.feed.post/3kabc123")
+        )
+        assertEquals(
+            "https://bsky.app/profile/handcranked.bsky.social/post/3kabc123",
+            atUriToPostUrl("https://bsky.app/profile/handcranked.bsky.social/post/3kabc123")
+        )
+    }
+
+    @Test fun `WeeklyChallenge includes postUrl when provided`() {
+        val challenge = parseWeeklyChallenge("Monday: #Mon").copy(
+            postUrl = "https://bsky.app/profile/handcranked.bsky.social/post/3kabc123"
+        )
+        assertEquals("https://bsky.app/profile/handcranked.bsky.social/post/3kabc123", challenge.postUrl)
+    }
 }
