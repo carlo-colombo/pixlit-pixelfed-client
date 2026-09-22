@@ -12,7 +12,8 @@ private val TAG_PATTERN = Regex("(#[\\p{L}\\p{N}_]+)(?:\\s*\\(([^)]*)\\))?")
 
 data class WeeklyChallenge(
     val dateRange: String,
-    val tagsByDay: Map<String, List<ChallengeTag>>
+    val tagsByDay: Map<String, List<ChallengeTag>>,
+    val postUrl: String? = null
 )
 
 data class ChallengeTag(
@@ -40,8 +41,24 @@ class BlueskyArtShowRepository @Inject constructor(private val api: BlueskyApi) 
             description.lines().any { DAY_PATTERN.matches(it) }
         }
         val source = listOfNotNull(post.record?.text, dailyDescription).joinToString("\n")
-        parseWeeklyChallenge(source)
+        val postUrl = atUriToPostUrl(uri)
+        parseWeeklyChallenge(source).copy(postUrl = postUrl)
     }
+}
+
+fun atUriToPostUrl(uri: String): String {
+    if (uri.startsWith("at://")) {
+        val path = uri.removePrefix("at://")
+        val parts = path.split("/")
+        if (parts.size >= 3 && parts[1] == "app.bsky.feed.post") {
+            val handleOrDid = parts[0]
+            val rkey = parts[2]
+            return "https://bsky.app/profile/$handleOrDid/post/$rkey"
+        }
+    } else if (uri.startsWith("http://") || uri.startsWith("https://")) {
+        return uri
+    }
+    return "https://bsky.app/profile/$ROBYN_ACTOR"
 }
 
 fun parseBlueSkyArtShowTheme(text: String?): String? =

@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -13,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import java.time.LocalDate
@@ -28,6 +31,7 @@ fun SocialScreen(
     val challenge by viewModel.challenge.collectAsState()
     val loading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
+    val uriHandler = LocalUriHandler.current
 
     val currentDay = remember {
         LocalDate.now().dayOfWeek.getDisplayName(TextStyle.FULL, Locale.ENGLISH)
@@ -61,6 +65,19 @@ fun SocialScreen(
                 Text("Robyn's pinned art challenge", style = MaterialTheme.typography.titleMedium)
                 if (challenge != null) {
                     Text(challenge!!.dateRange, style = MaterialTheme.typography.titleLarge)
+                    challenge!!.postUrl?.let { url ->
+                        OutlinedButton(
+                            onClick = { uriHandler.openUri(url) }
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("View pinned post on Bluesky")
+                        }
+                    }
                 }
             }
         }
