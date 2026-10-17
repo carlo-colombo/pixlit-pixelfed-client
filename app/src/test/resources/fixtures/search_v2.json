@@ -1,0 +1,9 @@
+{
+  "accounts": [],
+  "statuses": [],
+  "hashtags": [
+    { "name": "photography", "url": "https://pixelfed.example/discover/tags/photography" },
+    { "name": "landscape", "url": "https://pixelfed.example/discover/tags/landscape" },
+    { "name": "nightphotography", "url": "https://pixelfed.example/discover/tags/nightphotography" }
+  ]
+}

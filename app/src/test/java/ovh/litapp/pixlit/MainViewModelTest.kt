@@ -15,10 +15,12 @@ import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import ovh.litapp.pixlit.data.auth.Pkce
 import ovh.litapp.pixlit.data.auth.SessionState
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
@@ -49,46 +51,90 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `handleIntent with valid code updates isLoggedIn`() = runTest {
-        val intent = mockk<Intent>(relaxed = true)
-        val uri = mockk<Uri>()
-        every { intent.data } returns uri
-        every { uri.scheme } returns "pixelfed-app"
-        every { uri.host } returns "oauth"
-        every { uri.getQueryParameter("code") } returns "test_code"
-        every { uri.getQueryParameter("error") } returns null
-        every { uri.getQueryParameter("error_description") } returns null
-        val state = viewModel.createOAuthState()
-        every { uri.getQueryParameter("state") } returns state
-        
-        coEvery { repository.exchangeCodeForToken(any(), any()) } returns Result.success("token")
-        
-        viewModel.handleIntent(intent)
-        
+    fun `handleIntent with a valid code exchanges it with the verifier behind the challenge`() = runTest {
+        coEvery { repository.exchangeCodeForToken(any(), any(), anyNullable()) } returns Result.success("token")
+        val authorizeRequest = viewModel.createOAuthState()
+
+        viewModel.handleIntent(oauthRedirect(code = "test_code", state = authorizeRequest.state))
         advanceUntilIdle()
-        
+
         assertTrue(viewModel.isLoggedIn.value)
+        // The verifier the ViewModel kept must be the one that hashes to the challenge it published.
+        coVerify {
+            repository.exchangeCodeForToken(
+                "test_code",
+                "pixelfed-app://oauth",
+                match { Pkce.s256Challenge(it) == authorizeRequest.codeChallenge }
+            )
+        }
+    }
+
+    @Test
+    fun `createOAuthState generates a fresh state and an S256 challenge`() = runTest {
+        val first = viewModel.createOAuthState()
+        val second = viewModel.createOAuthState()
+
+        assertTrue(first.state.isNotBlank())
+        // base64url(SHA256(verifier)) is 43 unpadded characters.
+        assertEquals(43, first.codeChallenge.length)
+        assertNotEquals(first.state, second.state)
+        assertNotEquals(first.codeChallenge, second.codeChallenge)
+        assertNotEquals(first.state, first.codeChallenge)
     }
 
     @Test
     fun `handleIntent with mismatched state reports an error and does not exchange the code`() = runTest {
+        viewModel.createOAuthState()
+
+        viewModel.handleIntent(oauthRedirect(code = "test_code", state = "attacker-supplied-state"))
+        advanceUntilIdle()
+
+        assertFalse(viewModel.isLoggedIn.value)
+        assertNotNull(viewModel.authError.value)
+        coVerify(exactly = 0) { repository.exchangeCodeForToken(any(), any(), anyNullable()) }
+    }
+
+    @Test
+    fun `handleIntent without a state reports an error and does not exchange the code`() = runTest {
+        viewModel.createOAuthState()
+
+        viewModel.handleIntent(oauthRedirect(code = "test_code", state = null))
+        advanceUntilIdle()
+
+        assertFalse(viewModel.isLoggedIn.value)
+        assertNotNull(viewModel.authError.value)
+        coVerify(exactly = 0) { repository.exchangeCodeForToken(any(), any(), anyNullable()) }
+    }
+
+    @Test
+    fun `a consumed state cannot be replayed`() = runTest {
+        coEvery { repository.exchangeCodeForToken(any(), any(), anyNullable()) } returns Result.success("token")
+        val authorizeRequest = viewModel.createOAuthState()
+        val redirect = oauthRedirect(code = "test_code", state = authorizeRequest.state)
+
+        viewModel.handleIntent(redirect)
+        advanceUntilIdle()
+        viewModel.handleIntent(redirect)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { repository.exchangeCodeForToken(any(), any(), anyNullable()) }
+    }
+
+    /**
+     * A `pixelfed-app://oauth` redirect with the given query parameters. [state] of `null` stands for
+     * a redirect that carries no `state` at all.
+     */
+    private fun oauthRedirect(code: String?, state: String?): Intent {
         val intent = mockk<Intent>(relaxed = true)
         val uri = mockk<Uri>()
         every { intent.data } returns uri
         every { uri.scheme } returns "pixelfed-app"
         every { uri.host } returns "oauth"
-        every { uri.getQueryParameter("code") } returns "test_code"
+        every { uri.getQueryParameter("code") } returns code
+        every { uri.getQueryParameter("state") } returns state
         every { uri.getQueryParameter("error") } returns null
         every { uri.getQueryParameter("error_description") } returns null
-        every { uri.getQueryParameter("state") } returns "attacker-supplied-state"
-
-        viewModel.createOAuthState()
-        viewModel.handleIntent(intent)
-        advanceUntilIdle()
-
-        assertFalse(viewModel.isLoggedIn.value)
-        assertNotNull(viewModel.authError.value)
-        coVerify(exactly = 0) { repository.exchangeCodeForToken(any(), any()) }
+        return intent
     }
 
     @Test

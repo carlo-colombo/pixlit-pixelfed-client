@@ -1,0 +1,48 @@
+[
+  {
+    "id": "109847263019283746",
+    "content": "<p>Harbour at dusk #harbour #landscape</p>",
+    "text": "Harbour at dusk #harbour #landscape",
+    "description": "Harbour at dusk",
+    "created_at": "2024-05-01T18:22:31.000000Z",
+    "spoiler_text": "",
+    "visibility": "public",
+    "favourites_count": 12,
+    "reblogs_count": 3,
+    "replies_count": 1,
+    "url": "https://pixelfed.example/p/carlo/109847263019283746",
+    "tags": [
+      { "name": "harbour", "url": "https://pixelfed.example/discover/tags/harbour" },
+      { "name": "landscape", "url": "https://pixelfed.example/discover/tags/landscape" }
+    ],
+    "media_attachments": [
+      {
+        "id": "555000111",
+        "type": "image",
+        "url": "https://pixelfed.example/storage/media/555000111/harbour.jpg",
+        "preview_url": "https://pixelfed.example/storage/media/555000111/harbour-preview.jpg",
+        "description": "Fishing boats moored at dusk #design"
+      }
+    ]
+  },
+  {
+    "id": "109847263019283747",
+    "content": "<p>No tags in this body</p>",
+    "created_at": "2024-04-30T07:05:00.000000Z",
+    "tags": [],
+    "media_attachments": [
+      {
+        "id": "555000112",
+        "type": "image",
+        "url": "https://pixelfed.example/storage/media/555000112/ari.jpg",
+        "preview_url": null,
+        "description": "Ari at the beach #design #travelphotography"
+      }
+    ]
+  },
+  {
+    "id": 109847263019283748,
+    "text": "A status whose id arrives as a JSON number and without tags or media",
+    "created_at": "2024-04-29T11:00:00.000000Z"
+  }
+]

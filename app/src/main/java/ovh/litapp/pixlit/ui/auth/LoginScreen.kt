@@ -19,7 +19,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import ovh.litapp.pixlit.OAuthAuthorizeRequest
 import ovh.litapp.pixlit.R
+import ovh.litapp.pixlit.data.auth.Pkce
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import kotlinx.coroutines.launch
@@ -31,7 +33,9 @@ fun LoginScreen(
     tokenManager: TokenManager,
     repository: PixelfedRepository,
     initialErrorMessage: String? = null,
-    onGenerateOAuthState: () -> String
+    // Produces the `state` and PKCE challenge for one authorization attempt (SEC-03). The matching
+    // verifier stays in the ViewModel and is sent only at the token exchange.
+    onGenerateOAuthState: () -> OAuthAuthorizeRequest
 ) {
     val scope = rememberCoroutineScope()
     val redirectUri = context.getString(R.string.redirect_uri)
@@ -86,6 +90,9 @@ fun LoginScreen(
                     return@launch
                 }
 
+                // State and PKCE are generated once the client id is known: a request whose
+                // registration failed must not leave a verifier pending in the ViewModel.
+                val authorizeRequest = onGenerateOAuthState()
                 val authUrl = Uri.parse(formattedUrl)
                     .buildUpon()
                     .appendPath("oauth")
@@ -96,7 +103,10 @@ fun LoginScreen(
                     // Uploader scope only: no DMs and no follows are requested.
                     .appendQueryParameter("scope", "read write")
                     // Anti-CSRF state, verified in MainViewModel.handleIntent before the exchange.
-                    .appendQueryParameter("state", onGenerateOAuthState())
+                    .appendQueryParameter("state", authorizeRequest.state)
+                    // S256 PKCE: only the challenge travels here, the verifier is sent at exchange.
+                    .appendQueryParameter("code_challenge", authorizeRequest.codeChallenge)
+                    .appendQueryParameter("code_challenge_method", Pkce.CODE_CHALLENGE_METHOD)
                     .build()
 
                 val customTabsIntent = CustomTabsIntent.Builder().build()

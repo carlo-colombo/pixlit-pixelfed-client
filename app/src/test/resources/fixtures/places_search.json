@@ -1,0 +1,23 @@
+[
+  {
+    "id": 3682,
+    "name": "Kotor",
+    "slug": "kotor",
+    "country": "Montenegro",
+    "lat": 42.424662,
+    "lng": 18.771234
+  },
+  {
+    "id": 94031,
+    "name": "Lofoten",
+    "slug": "lofoten",
+    "country": "",
+    "lat": 68.208,
+    "lng": 13.6106
+  },
+  {
+    "id": 5,
+    "name": "",
+    "country": "Iceland"
+  }
+]

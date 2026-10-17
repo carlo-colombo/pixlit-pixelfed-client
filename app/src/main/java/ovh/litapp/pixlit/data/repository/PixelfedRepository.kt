@@ -57,8 +57,11 @@ class PixelfedRepository @Inject constructor(
     suspend fun registerApp(instanceUrl: String, redirectUri: String): Result<Pair<String, String>> =
         sessionRepository.registerApp(instanceUrl, redirectUri)
 
-    suspend fun exchangeCodeForToken(code: String, redirectUri: String): Result<String> =
-        sessionRepository.exchangeCodeForToken(code, redirectUri)
+    suspend fun exchangeCodeForToken(
+        code: String,
+        redirectUri: String,
+        codeVerifier: String? = null
+    ): Result<String> = sessionRepository.exchangeCodeForToken(code, redirectUri, codeVerifier)
 
     /**
      * The upload seam the worker calls (UP-05). The ViewModel no longer uploads: it enqueues an
@@ -279,6 +282,8 @@ class PixelfedRepository @Inject constructor(
                 return@withContext Result.failure(Exception("Tag search failed: ${response.code()}"))
             }
 
+            // `hashtags` is nullable on the DTO because Gson can inject null when the v2 response
+            // omits the key (DATA-10): a missing collection is "no results", never an NPE.
             val names = response.body()?.hashtags.orEmpty()
                 .mapNotNull { it.name?.trim()?.removePrefix("#")?.takeIf(String::isNotBlank) }
                 .distinctBy(String::lowercase)

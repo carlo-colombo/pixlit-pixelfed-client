@@ -1,0 +1,18 @@
+[
+  {
+    "id": "c0ffee12-3456-4abc-9def-0123456789ab",
+    "title": "Darkroom 2024",
+    "description": "Film, mostly.",
+    "visibility": "public",
+    "posts_count": 12
+  },
+  {
+    "id": "c0ffee12-3456-4abc-9def-0123456789ac",
+    "name": "Untitled drafts",
+    "visibility": "private",
+    "posts_count": 0
+  },
+  {
+    "id": "c0ffee12-3456-4abc-9def-0123456789ad"
+  }
+]
