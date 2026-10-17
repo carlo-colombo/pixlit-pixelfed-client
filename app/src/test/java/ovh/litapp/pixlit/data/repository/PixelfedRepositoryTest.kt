@@ -4,6 +4,9 @@ import ovh.litapp.pixlit.data.api.MediaAttachment
 import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.api.TagItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PixelfedRepositoryTest {
@@ -296,5 +299,75 @@ class PixelfedRepositoryTest {
 
         assertEquals(6, combined.size)
         assertEquals(listOf("photo1", "photo2", "photo3", "photo4", "photo5", "photo6"), combined)
+    }
+
+    @Test
+    fun testShouldRefreshStatuses_forcedAlwaysRefreshes() {
+        val now = 1_000_000L
+
+        assertTrue(
+            "a forced refresh must ignore a fresh timestamp",
+            PixelfedRepository.shouldRefreshStatuses(forceRefresh = true, lastRefreshAtMs = now, nowMs = now)
+        )
+    }
+
+    @Test
+    fun testShouldRefreshStatuses_insideTtlSkipsTheFetch() {
+        val now = 1_000_000L
+
+        assertFalse(
+            "never fetched (0) is treated as expired, so this one must be recent",
+            PixelfedRepository.shouldRefreshStatuses(forceRefresh = false, lastRefreshAtMs = now, nowMs = now)
+        )
+        assertFalse(
+            "one millisecond inside the TTL must not refetch",
+            PixelfedRepository.shouldRefreshStatuses(
+                forceRefresh = false,
+                lastRefreshAtMs = now - PixelfedRepository.STATUS_REFRESH_TTL_MS + 1,
+                nowMs = now
+            )
+        )
+    }
+
+    @Test
+    fun testShouldRefreshStatuses_expiredTtlAndNeverFetchedRefetch() {
+        val now = 1_000_000L
+
+        assertTrue(
+            "the TTL boundary itself is stale",
+            PixelfedRepository.shouldRefreshStatuses(
+                forceRefresh = false,
+                lastRefreshAtMs = now - PixelfedRepository.STATUS_REFRESH_TTL_MS,
+                nowMs = now
+            )
+        )
+        assertTrue(
+            "a process that never fetched must fetch",
+            PixelfedRepository.shouldRefreshStatuses(forceRefresh = false, lastRefreshAtMs = 0L, nowMs = now)
+        )
+    }
+
+    @Test
+    fun testAccountIdCache_hitsOnlyForTheSameInstanceAndToken() {
+        val cache = AccountIdCache()
+
+        assertNull("an empty cache must miss", cache.get("https://a.example", "token-a"))
+
+        cache.put("https://a.example", "token-a", "account-a")
+
+        assertEquals("account-a", cache.get("https://a.example", "token-a"))
+        assertNull("another instance must not reuse the id", cache.get("https://b.example", "token-a"))
+        assertNull("a new token must not reuse the id", cache.get("https://a.example", "token-b"))
+    }
+
+    @Test
+    fun testAccountIdCache_resolvesAgainAfterTheSessionChanges() {
+        val cache = AccountIdCache()
+        cache.put("https://a.example", "token-a", "account-a")
+
+        cache.put("https://a.example", "token-b", "account-b")
+
+        assertEquals("account-b", cache.get("https://a.example", "token-b"))
+        assertNull("the previous session's id must not survive re-login", cache.get("https://a.example", "token-a"))
     }
 }
