@@ -1,0 +1,151 @@
+name: PR
+
+# Least privilege by default; no job in this workflow writes anything back to
+# the repository.
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+# Superseded runs on the same ref cancel each other instead of queuing up.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Paths that cannot affect the Android build (docs/**, **/*.md, LICENSE,
+  # .github/dependabot.yml) are ignored for the heavy job below. The filter is
+  # applied at the job level rather than on `on.pull_request`, because a
+  # workflow-level filter never reports a check for docs-only PRs, leaving
+  # required checks pending and branch protection stuck.
+  changes:
+    name: Detect build-relevant changes
+    runs-on: ubuntu-latest
+    outputs:
+      build_needed: ${{ steps.paths_ignore.outputs.build_needed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Apply paths-ignore filter
+        id: paths_ignore
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          if [ -z "$base" ] || [ -z "$head" ]; then
+            # workflow_dispatch: no comparison range, always build.
+            echo "build_needed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          build_needed=false
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              docs/*|*.md|LICENSE|.github/dependabot.yml) ;;
+              *)
+                build_needed=true
+                break
+                ;;
+            esac
+          done < <(git diff --name-only "$base" "$head")
+          echo "build_needed=$build_needed" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: changes
+    if: needs.changes.outputs.build_needed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+
+      # Shared with build.yml. The action pins the JETBRAINS 21 JDK that
+      # gradle/gradle-daemon-jvm.properties requires; the checkout above cannot
+      # move into it, because a local composite action is only resolvable after
+      # the repository is on the runner.
+      - name: Set Up JDK and Gradle
+        uses: ./.github/actions/setup-jdk-gradle
+
+      - name: Set build config
+        # Single source for the PR build version: a throwaway version derived
+        # once here and reused by the assemble step (which stamps versionName /
+        # versionCode) and the prepare step (which names the uploaded APK).
+        id: build_config
+        run: |
+          set -euo pipefail
+          tag_version="1.0.0-pr-${{ github.run_number }}"
+          echo "tag_version=$tag_version" >> "$GITHUB_OUTPUT"
+          echo "version_code=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble, test and lint
+        # One Gradle invocation keeps a single configuration/daemon warm and
+        # lets the tasks run in parallel. `ciDev` is this repo's dev flavor;
+        # AGP only creates unit-test tasks for the tested build type (`debug`).
+        run: |
+          ./gradlew \
+            -Pandroid.versionName="${{ steps.build_config.outputs.tag_version }}" \
+            -Pandroid.versionCode="${{ steps.build_config.outputs.version_code }}" \
+            :app:assembleCiDevDebug \
+            :app:testCiDevDebugUnitTest \
+            :app:lintCiDevDebug \
+            --parallel
+
+      - name: Prepare APK artifact
+        run: |
+          set -euo pipefail
+          cp app/build/outputs/apk/ciDev/debug/app-ci-dev-debug.apk "pixelfed-client-${{ steps.build_config.outputs.tag_version }}.apk"
+
+      - name: Generate APK checksum
+        run: sha256sum "pixelfed-client-${{ steps.build_config.outputs.tag_version }}.apk" > "pixelfed-client-${{ steps.build_config.outputs.tag_version }}.apk.sha256"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pixelfed-client-apk
+          path: |
+            pixelfed-client-${{ steps.build_config.outputs.tag_version }}.apk
+            pixelfed-client-${{ steps.build_config.outputs.tag_version }}.apk.sha256
+          retention-days: 14
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pixelfed-client-reports
+          path: app/build/reports/**
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Always-on required check. Branch protection should require
+  # "PR / required-checks": unlike `build`, which is skipped for docs-only PRs,
+  # this job always runs and reports, so the required check is never left
+  # pending; it fails only when the Android build really failed.
+  required-checks:
+    name: required-checks
+    needs:
+      - changes
+      - build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm the Android build did not fail
+        run: |
+          changes_result="${{ needs.changes.result }}"
+          build_result="${{ needs.build.result }}"
+          if [ "$changes_result" = "failure" ] || [ "$changes_result" = "cancelled" ]; then
+            echo "Change detection $changes_result"
+            exit 1
+          fi
+          if [ "$build_result" = "failure" ] || [ "$build_result" = "cancelled" ]; then
+            echo "Android build $build_result"
+            exit 1
+          fi
+          echo "Android build result: $build_result"
