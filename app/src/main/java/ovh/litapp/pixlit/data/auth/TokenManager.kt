@@ -41,8 +41,6 @@ class TokenManager @Inject constructor(@ApplicationContext context: Context) {
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_CLIENT_ID = "client_id"
         private const val KEY_CLIENT_SECRET = "client_secret"
-        private const val KEY_CACHED_TAGS = "cached_tags"
-        private const val KEY_TAGS_CACHE_TIME = "tags_cache_time"
         private const val KEY_TAG_SEARCH_CACHE = "tag_search_cache"
 
         /**
@@ -68,18 +66,6 @@ class TokenManager @Inject constructor(@ApplicationContext context: Context) {
                 context.getSharedPreferences(FALLBACK_PREFS_FILE, Context.MODE_PRIVATE)
             }
     }
-
-    var cachedTagsJson: String?
-        get() = prefs.getString(KEY_CACHED_TAGS, null)
-        set(value) {
-            prefs.edit().putString(KEY_CACHED_TAGS, value).commit()
-        }
-
-    var tagsCacheTime: Long
-        get() = prefs.getLong(KEY_TAGS_CACHE_TIME, 0L)
-        set(value) {
-            prefs.edit().putLong(KEY_TAGS_CACHE_TIME, value).commit()
-        }
 
     var tagSearchCacheJson: String?
         get() = prefs.getString(KEY_TAG_SEARCH_CACHE, null)
