@@ -14,6 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import ovh.litapp.pixlit.R
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
@@ -29,9 +32,28 @@ fun LoginScreen(
 ) {
     val scope = rememberCoroutineScope()
     val redirectUri = context.getString(R.string.redirect_uri)
+    val uiState = remember { LoginUiState(initialErrorMessage) }
+
+    // A launched Custom Tab pauses this screen. Resuming without a redirect
+    // result (the user closed the tab) must resolve the pending login, otherwise
+    // the button spins forever with no way out.
+    val lifecycleOwner = context as? LifecycleOwner
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                uiState.onScreenResumed()
+            }
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
+    }
+
+    LaunchedEffect(initialErrorMessage) {
+        uiState.onExternalError(initialErrorMessage)
+    }
 
     LoginContent(
-        initialErrorMessage = initialErrorMessage,
+        uiState = uiState,
         onLoginClick = { instanceUrl, manualClientId, manualClientSecret ->
             var formattedUrl = instanceUrl.trim()
             if (!formattedUrl.startsWith("http://") && !formattedUrl.startsWith("https://")) {
@@ -48,29 +70,37 @@ fun LoginScreen(
                     clientIdToUse = manualClientId.trim()
                 } else {
                     val result = repository.registerApp(formattedUrl, redirectUri)
-                    if (result.isSuccess) {
-                        clientIdToUse = result.getOrNull()?.first
-                    } else {
-                        clientIdToUse = null
-                        // Handle error message passing back to LoginContent if needed
-                        // For now, simpler to keep some logic inside LoginContent or use a State class
+                    clientIdToUse = result.getOrNull()?.first
+                    if (clientIdToUse.isNullOrBlank()) {
+                        val reason = result.exceptionOrNull()?.localizedMessage
+                            ?: "Could not reach $formattedUrl"
+                        uiState.onLoginFailed(reason)
                     }
                 }
 
-                if (!clientIdToUse.isNullOrBlank()) {
-                    val authUrl = Uri.parse(formattedUrl)
-                        .buildUpon()
-                        .appendPath("oauth")
-                        .appendPath("authorize")
-                        .appendQueryParameter("client_id", clientIdToUse)
-                        .appendQueryParameter("redirect_uri", redirectUri)
-                        .appendQueryParameter("response_type", "code")
-                        .appendQueryParameter("scope", "read write follow")
-                        .build()
-
-                    val customTabsIntent = CustomTabsIntent.Builder().build()
-                    customTabsIntent.launchUrl(context, authUrl)
+                if (clientIdToUse.isNullOrBlank()) {
+                    // Every failure above already resolved the loading state.
+                    return@launch
                 }
+
+                val authUrl = Uri.parse(formattedUrl)
+                    .buildUpon()
+                    .appendPath("oauth")
+                    .appendPath("authorize")
+                    .appendQueryParameter("client_id", clientIdToUse)
+                    .appendQueryParameter("redirect_uri", redirectUri)
+                    .appendQueryParameter("response_type", "code")
+                    .appendQueryParameter("scope", "read write follow")
+                    .build()
+
+                val customTabsIntent = CustomTabsIntent.Builder().build()
+                runCatching { customTabsIntent.launchUrl(context, authUrl) }
+                    .onSuccess { uiState.onRedirectLaunched() }
+                    .onFailure {
+                        uiState.onLoginFailed(
+                            it.localizedMessage ?: "Could not open the authorization page"
+                        )
+                    }
             }
         }
     )
@@ -78,22 +108,13 @@ fun LoginScreen(
 
 @Composable
 fun LoginContent(
-    initialErrorMessage: String? = null,
+    uiState: LoginUiState,
     onLoginClick: (String, String, String) -> Unit = { _, _, _ -> }
 ) {
     var instanceUrl by remember { mutableStateOf("https://pixelfed.social") }
     var manualClientId by remember { mutableStateOf("") }
     var manualClientSecret by remember { mutableStateOf("") }
     var showManualCredentials by remember { mutableStateOf(false) }
-
-    var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(initialErrorMessage) }
-
-    LaunchedEffect(initialErrorMessage) {
-        if (!initialErrorMessage.isNullOrBlank()) {
-            errorMessage = initialErrorMessage
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -154,6 +175,7 @@ fun LoginContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        val errorMessage = uiState.errorMessage
         if (errorMessage != null) {
             Box(
                 modifier = Modifier
@@ -163,7 +185,7 @@ fun LoginContent(
             ) {
                 SelectionContainer {
                     Text(
-                        text = errorMessage!!,
+                        text = errorMessage,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -175,17 +197,16 @@ fun LoginContent(
         Button(
             onClick = {
                 if (instanceUrl.isBlank()) {
-                    errorMessage = "Please enter instance URL"
+                    uiState.onLoginFailed("Please enter instance URL")
                     return@Button
                 }
-                isLoading = true
-                errorMessage = null
+                uiState.onLoginStarted()
                 onLoginClick(instanceUrl, manualClientId, manualClientSecret)
             },
-            enabled = !isLoading,
+            enabled = !uiState.isLoading,
             modifier = Modifier.fillMaxWidth()
         ) {
-            if (isLoading) {
+            if (uiState.isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(24.dp),
                     color = MaterialTheme.colorScheme.onPrimary
@@ -201,7 +222,7 @@ fun LoginContent(
 @Composable
 fun LoginScreenPreview() {
     PixlitTheme {
-        LoginContent()
+        LoginContent(uiState = remember { LoginUiState() })
     }
 }
 
@@ -209,6 +230,12 @@ fun LoginScreenPreview() {
 @Composable
 fun LoginScreenErrorPreview() {
     PixlitTheme {
-        LoginContent(initialErrorMessage = "Could not connect to instance. Please check your URL and try again.")
+        LoginContent(
+            uiState = remember {
+                LoginUiState(
+                    initialErrorMessage = "Could not connect to instance. Please check your URL and try again."
+                )
+            }
+        )
     }
 }
