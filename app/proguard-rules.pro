@@ -4,6 +4,15 @@
 # You can edit the include path and order by changing the Proguard
 # files in build.gradle.
 
+# Readable stack traces for sideloaded release builds: keep the source
+# attributes and rename the file so obfuscated frames map through mapping.txt.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
+# Retrofit and OkHttp/Okio ship their own consumer ProGuard rules, already applied
+# and visible in build/outputs/mapping/<variant>/configuration.txt, so this file
+# no longer duplicates their -keep/-dontwarn rules.
+
 # Keep Retrofit / Gson data models and annotations
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
@@ -21,15 +30,5 @@
 # Keep all data models used with Gson/Retrofit
 -keep class ovh.litapp.pixlit.data.api.** { *; }
 
-# OkHttp
--dontwarn okhttp3.**
--dontwarn okio.**
--dontwarn javax.annotation.**
--dontwarn org.conscrypt.**
-
-# Retrofit
--dontwarn retrofit2.**
--keep class retrofit2.** { *; }
-
-# Coil
+# Coil ships no consumer rules, so this targeted suppression is still required.
 -dontwarn io.coil-kt.**
