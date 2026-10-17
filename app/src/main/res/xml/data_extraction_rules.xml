@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Credential material (OAuth access token and instance client_secret) lives in the
+  pixlit_prefs preference file. It must never leave the device through Auto Backup or
+  device-to-device transfer; pixlit_prefs_fallback is only used when the keystore-backed
+  store is unavailable and is excluded for the same reason.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude
+            domain="sharedpref"
+            path="pixlit_prefs.xml" />
+        <exclude
+            domain="sharedpref"
+            path="pixlit_prefs_fallback.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude
+            domain="sharedpref"
+            path="pixlit_prefs.xml" />
+        <exclude
+            domain="sharedpref"
+            path="pixlit_prefs_fallback.xml" />
+    </device-transfer>
+</data-extraction-rules>

@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import ovh.litapp.pixlit.data.auth.SessionState
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import javax.inject.Inject
@@ -38,6 +39,21 @@ class MainViewModel @Inject constructor(
 
     private val _sharedImageUris = MutableStateFlow<List<Uri>>(emptyList())
     val sharedImageUris: StateFlow<List<Uri>> = _sharedImageUris.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            tokenManager.sessionState.collect { state ->
+                when (state) {
+                    SessionState.Authenticated -> _isLoggedIn.value = true
+                    SessionState.Expired -> {
+                        _isLoggedIn.value = false
+                        _authError.value = "Session expired — sign in again"
+                    }
+                    SessionState.LoggedOut -> _isLoggedIn.value = false
+                }
+            }
+        }
+    }
 
     fun handleIntent(intent: Intent?) {
         val action = intent?.action
