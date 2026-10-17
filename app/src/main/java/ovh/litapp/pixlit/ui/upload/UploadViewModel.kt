@@ -9,10 +9,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ovh.litapp.pixlit.data.api.CollectionItem
@@ -20,6 +22,7 @@ import ovh.litapp.pixlit.data.api.PlaceItem
 import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.data.repository.CacheSummaryItem
+import ovh.litapp.pixlit.data.repository.TagCount
 import ovh.litapp.pixlit.utils.ImageMetadata
 import ovh.litapp.pixlit.utils.ImageUtils
 import javax.inject.Inject
@@ -55,7 +58,7 @@ class UploadViewModel @Inject constructor(
     private val _isError = MutableStateFlow(false)
     val isError = _isError.asStateFlow()
 
-    private val _topTags = MutableStateFlow(repository.getDefaultStaticTagCounts())
+    private val _topTags = MutableStateFlow<List<TagCount>>(emptyList())
     val topTags = _topTags.asStateFlow()
 
     private val _recentStatuses = MutableStateFlow<List<StatusItem>>(emptyList())
@@ -116,30 +119,45 @@ class UploadViewModel @Inject constructor(
     val isSearchingPlaces = _isSearchingPlaces.asStateFlow()
 
     private var placeSearchJob: kotlinx.coroutines.Job? = null
+    private var exifDetectionJob: Job? = null
     private var isUserLocationSelectionManual = false
 
+    /** URI whose metadata is the one currently allowed to publish; superseded work is ignored. */
+    private var metadataRequestUri: Uri? = null
+
     init {
+        // Fill the tag section with the static onboarding asset off the main thread;
+        // fetchTags() replaces it with live counts when the account request lands.
+        viewModelScope.launch {
+            val staticTagCounts = repository.getDefaultStaticTagCounts()
+            if (_topTags.value.isEmpty()) {
+                _topTags.value = staticTagCounts
+            }
+        }
+
         // Load the real account history so the recent-posts section is useful on first render.
         fetchTags(forceRefresh = true)
         fetchCollections()
         refreshCacheSummary()
 
-        // Sync metadata when current page or URIs or resize setting changes
-        combine(
-            _currentPage,
-            _selectedImageUris,
-            _resizeTo8Mb
-        ) { page, uris, resize ->
-            Triple(page, uris, resize)
-        }.onEach { (page, uris, resize) ->
-            val uri = uris.getOrNull(page)
-            if (uri != null) {
-                updateMetadata(uri, resize)
-            } else {
-                _originalMetadata.value = null
-                _resizedMetadata.value = null
+        // Sync metadata when current page or URIs or resize setting changes.
+        // collectLatest cancels the superseded page instead of letting it write stale metadata.
+        viewModelScope.launch {
+            combine(
+                _currentPage,
+                _selectedImageUris,
+                _resizeTo8Mb
+            ) { page, uris, resize ->
+                Triple(page, uris, resize)
+            }.collectLatest { (page, uris, resize) ->
+                val uri = uris.getOrNull(page)
+                if (uri != null) {
+                    updateMetadata(uri, resize)
+                } else {
+                    clearMetadata()
+                }
             }
-        }.launchIn(viewModelScope)
+        }
 
         _selectedImageUris.onEach { uris ->
             if (uris.isEmpty()) {
@@ -156,37 +174,53 @@ class UploadViewModel @Inject constructor(
     }
 
     fun detectExifLocation(uris: List<Uri>) {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                var foundExif = false
-                for (uri in uris) {
-                    try {
-                        val coords = ImageUtils.extractExifLocation(context, uri)
-                        if (coords != null) {
-                            foundExif = true
-                            _isExifMissing.value = false
-                            val (lat, lng) = coords
-                            _isSearchingPlaces.value = true
-                            val cityName = ImageUtils.cityNameFromLocation(context, lat, lng)
-                            _isSearchingPlaces.value = false
-                            val locationName = cityName ?: String.format(
-                                java.util.Locale.US,
-                                "%.2f, %.2f",
-                                lat,
-                                lng
-                            )
-                            _customLocationName.value = locationName
-                            _selectedPlace.value = null
-                            _isExifAutoDetected.value = true
-                            break
+        exifDetectionJob?.cancel()
+        exifDetectionJob = viewModelScope.launch {
+            var foundExif = false
+            for (uri in uris) {
+                try {
+                    val coords = withContext(Dispatchers.IO) {
+                        ImageUtils.extractExifLocation(context, uri)
+                    } ?: continue
+                    foundExif = true
+                    _isExifMissing.value = false
+                    val (lat, lng) = coords
+                    _isSearchingPlaces.value = true
+                    val cityName = try {
+                        withContext(Dispatchers.IO) {
+                            ImageUtils.cityNameFromLocation(context, lat, lng)
                         }
-                    } catch (e: Exception) {
-                        Log.e("UploadViewModel", "EXIF location detection failed", e)
+                    } finally {
+                        _isSearchingPlaces.value = false
                     }
+                    val locationName = cityName ?: String.format(
+                        java.util.Locale.US,
+                        "%.2f, %.2f",
+                        lat,
+                        lng
+                    )
+                    // Re-assert the manual-selection guard on Main after the Geocoder round-trip:
+                    // the user may have picked or typed a location while it was in flight.
+                    withContext(Dispatchers.Main.immediate) {
+                        if (isUserLocationSelectionManual ||
+                            _selectedPlace.value != null ||
+                            _customLocationName.value != null
+                        ) {
+                            return@withContext
+                        }
+                        _customLocationName.value = locationName
+                        _selectedPlace.value = null
+                        _isExifAutoDetected.value = true
+                    }
+                    break
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("UploadViewModel", "EXIF location detection failed", e)
                 }
-                if (!foundExif) {
-                    _isExifMissing.value = true
-                }
+            }
+            if (!foundExif && isActive) {
+                _isExifMissing.value = true
             }
         }
     }
@@ -216,6 +250,7 @@ class UploadViewModel @Inject constructor(
     }
 
     fun selectPlace(place: PlaceItem) {
+        exifDetectionJob?.cancel()
         _selectedPlace.value = place
         _customLocationName.value = null
         _isExifAutoDetected.value = false
@@ -229,6 +264,7 @@ class UploadViewModel @Inject constructor(
             clearLocation()
             return
         }
+        exifDetectionJob?.cancel()
         _selectedPlace.value = null
         _customLocationName.value = name.trim()
         _isExifAutoDetected.value = false
@@ -238,6 +274,7 @@ class UploadViewModel @Inject constructor(
     }
 
     fun clearLocation() {
+        exifDetectionJob?.cancel()
         _selectedPlace.value = null
         _customLocationName.value = null
         _isExifAutoDetected.value = false
@@ -246,11 +283,17 @@ class UploadViewModel @Inject constructor(
         isUserLocationSelectionManual = true
     }
 
-    private fun updateMetadata(uri: Uri, resize: Boolean) {
-        viewModelScope.launch {
+    /**
+     * Loads metadata for [uri] in the collector's coroutine so [collectLatest] can cancel
+     * superseded pages; [metadataRequestUri] gates every write against a stale completion.
+     */
+    private suspend fun updateMetadata(uri: Uri, resize: Boolean) {
+        metadataRequestUri = uri
+        try {
             val meta = withContext(Dispatchers.IO) {
                 ImageUtils.getImageMetadata(context, uri)
             }
+            if (metadataRequestUri != uri) return
             _originalMetadata.value = meta
 
             if (resize && meta != null && meta.sizeBytes > ImageUtils.MAX_BYTES_8MB) {
@@ -258,12 +301,23 @@ class UploadViewModel @Inject constructor(
                 val resizedFile = withContext(Dispatchers.IO) {
                     ImageUtils.resizeImageDownToMaxBytes(context, uri, ImageUtils.MAX_BYTES_8MB)
                 }
+                if (metadataRequestUri != uri) return
                 _resizedMetadata.value = resizedFile?.let { ImageUtils.getFileMetadata(it) }
-                _isCalculatingResized.value = false
             } else {
                 _resizedMetadata.value = null
             }
+        } finally {
+            if (metadataRequestUri == uri) {
+                _isCalculatingResized.value = false
+            }
         }
+    }
+
+    private fun clearMetadata() {
+        metadataRequestUri = null
+        _originalMetadata.value = null
+        _resizedMetadata.value = null
+        _isCalculatingResized.value = false
     }
 
     fun fetchCollections() {
@@ -380,9 +434,22 @@ class UploadViewModel @Inject constructor(
     }
 
     fun addImages(uris: List<Uri>) {
-        val combined = (_selectedImageUris.value + uris).take(6)
-        _selectedImageUris.value = combined
-        _statusMessage.value = null
+        val current = _selectedImageUris.value
+        // A pick can repeat a URI (e.g. the same photo tapped twice) or re-send one already selected.
+        val newUris = uris.distinct().filterNot { it in current }
+        val remainingSlots = (MAX_PHOTOS - current.size).coerceAtLeast(0)
+        val accepted = newUris.take(remainingSlots)
+        if (accepted.isNotEmpty()) {
+            _selectedImageUris.value = current + accepted
+        }
+        val dropped = newUris.size - accepted.size
+        if (dropped > 0) {
+            _statusMessage.value =
+                "Up to $MAX_PHOTOS photos per upload; $dropped photo(s) were not added."
+            _isError.value = false
+        } else if (accepted.isNotEmpty()) {
+            _statusMessage.value = null
+        }
     }
 
     fun removeImageAt(index: Int) {
@@ -560,7 +627,8 @@ class UploadViewModel @Inject constructor(
                     } else ""
                     _statusMessage.value = "Successfully uploaded ${uris.size} photo(s)$collectionsMsg!"
                     _isError.value = false
-                    _selectedImageUris.value = emptyList()
+                    // Keep photos picked while the upload was in flight; only the submitted ones are consumed.
+                    _selectedImageUris.value = _selectedImageUris.value.filterNot { it in uris }
                     _captionState.value = TextFieldValue("")
                     _selectedCollectionIds.value = emptySet()
                     _selectedPlace.value = null
@@ -581,6 +649,8 @@ class UploadViewModel @Inject constructor(
         }
     }
 }
+
+private const val MAX_PHOTOS = 6
 
 data class HashtagContext(val query: String, val start: Int, val end: Int)
 
