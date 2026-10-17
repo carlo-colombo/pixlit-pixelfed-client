@@ -41,8 +41,13 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun PixlitTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    /**
+     * Material You wallpaper colors are deliberately off by default: minSdk is 34, so leaving this
+     * true would replace the Purple/Pink brand palette in Color.kt with the device wallpaper colors
+     * for every user. Flip it to true only as an explicit Material You opt-in; on API 31+ the
+     * `dynamic*ColorScheme` branches below are ready for it.
+     */
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -58,7 +63,11 @@ fun PixlitTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            // Under enableEdgeToEdge() the system bar icons are drawn over Compose surfaces, so
+            // both bars need the matching light/dark icon appearance, not just the status bar.
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.isAppearanceLightStatusBars = !darkTheme
+            insetsController.isAppearanceLightNavigationBars = !darkTheme
         }
     }
 

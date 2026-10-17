@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark-mode window theme. Without a values-night override the light theme in values/themes.xml
+         is used in dark mode, so the window (and the edge-to-edge system bars) flash white before
+         Compose draws its dark scheme. Same style name; only the parent and window background
+         differ. -->
+    <style name="Theme.PixelfedClient" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/background_dark</item>
+    </style>
+</resources>
