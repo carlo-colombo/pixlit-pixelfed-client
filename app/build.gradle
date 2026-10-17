@@ -1,3 +1,13 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileSystemOperations
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
+
+import javax.inject.Inject
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -23,6 +33,45 @@ def copyRobolectricAndroidAll = tasks.register("copyRobolectricAndroidAll", Copy
     into(robolectricAndroidAllDir)
 }
 
+// The app's own license and the dependency notices are staged into a generated assets directory
+// rather than committed under app/src/main/assets: the root LICENSE/NOTICE/THIRD_PARTY_LICENSES.md
+// stay the single source of truth, so a packaged copy can never drift from them. The Variant-API
+// wiring below carries the task dependency, so every asset merge waits for the copy.
+// `LicenseAssetsTest` pins that they actually reach the merged assets.
+//
+// This is not a plain `Copy`: `addGeneratedSourceDirectory` needs a DirectoryProperty that is one
+// of the task's own outputs, and `Copy.destinationDirectory` only exists from Gradle 9.8 (this
+// build runs Gradle 9.5), so the task declares its output itself. It copies through injected
+// FileSystemOperations rather than `project` to stay configuration-cache compatible.
+abstract class StageLicenseAssetsTask extends DefaultTask {
+    @InputFiles
+    abstract ConfigurableFileCollection getSources()
+
+    @OutputDirectory
+    abstract DirectoryProperty getDestinationDirectory()
+
+    @Inject
+    abstract FileSystemOperations getFileSystemOperations()
+
+    @TaskAction
+    void stage() {
+        getFileSystemOperations().sync { spec ->
+            spec.into(getDestinationDirectory())
+            spec.from(getSources()) { into("licenses") }
+        }
+    }
+}
+
+def stageLicenseAssets = tasks.register("stageLicenseAssets", StageLicenseAssetsTask) {
+    description = "Stages LICENSE, NOTICE and THIRD_PARTY_LICENSES.md into the APK's assets."
+    sources.from(
+        rootProject.file("LICENSE"),
+        rootProject.file("NOTICE"),
+        rootProject.file("THIRD_PARTY_LICENSES.md")
+    )
+    destinationDirectory.set(layout.buildDirectory.dir("generated/license-assets"))
+}
+
 android {
     namespace = 'ovh.litapp.pixlit'
     compileSdk 37
@@ -42,6 +91,11 @@ android {
         }
 
         manifestPlaceholders = [appAuthRedirectScheme: "pixlit", appLabel: "Pixlit"]
+
+        // Surfaced in Settings -> About so the app can state its own license and point at the
+        // Corresponding Source for the exact build (GPLv3 section 6).
+        buildConfigField("String", "SOURCE_URL", "\"https://github.com/carlo-colombo/pixlit-pixelfed-client\"")
+        buildConfigField("String", "LICENSE_IDENTIFIER", "\"GPL-3.0-or-later\"")
     }
 
     flavorDimensions = ["distribution", "env"]
@@ -119,6 +173,17 @@ android {
         // checkDependencies is deliberately off: analysing every dependency's lint was the largest
         // single memory consumer in the release job and contributed to a runner OOM.
         warningsAsErrors = false
+    }
+}
+
+// AGP 9 refuses Provider-backed task outputs in the legacy `sourceSets` API ("You cannot add
+// Provider instances to the Android SourceSet API"), so the generated assets directory is wired
+// through the Variant API, which carries the task dependency for every variant. The callback must
+// return one of the task's own output properties, which is why `stageLicenseAssets` declares
+// `destinationDirectory` itself.
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(stageLicenseAssets) { it.destinationDirectory }
     }
 }
 

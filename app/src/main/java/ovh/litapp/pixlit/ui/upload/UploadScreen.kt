@@ -55,6 +55,7 @@ import ovh.litapp.pixlit.data.reminder.ReminderScheduler
 import java.time.LocalTime
 import ovh.litapp.pixlit.utils.ImageMetadata
 import ovh.litapp.pixlit.ui.social.SocialScreen
+import ovh.litapp.pixlit.ui.about.AboutSection
 
 private class CaptionSuggestionPositionProvider(
     private val cursorX: Int
@@ -808,15 +809,28 @@ private fun SettingsContent(
     scheduler: ReminderScheduler?,
     modifier: Modifier = Modifier
 ) {
-    if (preferences == null || scheduler == null) return
+    Column(
+        modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (preferences != null && scheduler != null) {
+            ReminderSettings(preferences, scheduler)
+        }
+        AboutSection()
+    }
+}
+
+@Composable
+private fun ReminderSettings(preferences: ReminderPreferences, scheduler: ReminderScheduler) {
     var friday by remember { mutableStateOf(preferences.friday) }
     var saturday by remember { mutableStateOf(preferences.saturday) }
-    Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("BlueSkyArtShow reminders", style = MaterialTheme.typography.headlineSmall)
-        Text("Reminders are always on. Times use your device timezone.", style = MaterialTheme.typography.bodyMedium)
-        ReminderTimeRow("Friday", friday) { time -> friday = time; preferences.friday = time; scheduler.rescheduleAll() }
-        ReminderTimeRow("Saturday", saturday) { time -> saturday = time; preferences.saturday = time; scheduler.rescheduleAll() }
-    }
+    Text("BlueSkyArtShow reminders", style = MaterialTheme.typography.headlineSmall)
+    Text("Reminders are always on. Times use your device timezone.", style = MaterialTheme.typography.bodyMedium)
+    ReminderTimeRow("Friday", friday) { time -> friday = time; preferences.friday = time; scheduler.rescheduleAll() }
+    ReminderTimeRow("Saturday", saturday) { time -> saturday = time; preferences.saturday = time; scheduler.rescheduleAll() }
 }
 
 @Composable
