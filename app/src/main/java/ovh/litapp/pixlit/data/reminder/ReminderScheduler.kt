@@ -4,6 +4,7 @@ import android.content.Context
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.*
 import javax.inject.Inject
@@ -15,8 +16,12 @@ class ReminderScheduler @Inject constructor(
     private val preferences: ReminderPreferences
 ) {
     fun scheduleAll() {
-        schedule(DayOfWeek.FRIDAY, preferences.friday)
-        schedule(DayOfWeek.SATURDAY, preferences.saturday)
+        // Best-effort: a stale or corrupt stored time must not crash the caller. Each day is guarded
+        // separately so a bad value for one cannot cancel the other reminder.
+        runCatching { schedule(DayOfWeek.FRIDAY, preferences.friday) }
+            .onFailure { Log.w(TAG, "Failed to schedule the Friday art-show reminder", it) }
+        runCatching { schedule(DayOfWeek.SATURDAY, preferences.saturday) }
+            .onFailure { Log.w(TAG, "Failed to schedule the Saturday art-show reminder", it) }
     }
 
     fun rescheduleAll() {
@@ -50,6 +55,10 @@ class ReminderScheduler @Inject constructor(
             intent,
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
         )?.let { context.getSystemService(AlarmManager::class.java).cancel(it) }
+    }
+
+    companion object {
+        private const val TAG = "ReminderScheduler"
     }
 }
 

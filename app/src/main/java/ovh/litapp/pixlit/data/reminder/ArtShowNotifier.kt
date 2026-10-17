@@ -1,7 +1,5 @@
 package ovh.litapp.pixlit.data.reminder
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -14,8 +12,6 @@ import javax.inject.Inject
 
 class ArtShowNotifier @Inject constructor(@ApplicationContext private val context: Context) {
     fun notify(theme: String?, saturday: Boolean) {
-        val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Art show reminders", NotificationManager.IMPORTANCE_DEFAULT))
         val title = "#BlueSkyArtShow${theme?.let { ": $it" } ?: ""}"
         val intent = Intent(context, MainActivity::class.java).putExtra("prefill", true).putExtra("theme", theme)
         val pending = PendingIntent.getActivity(context, 42, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -26,5 +22,6 @@ class ArtShowNotifier @Inject constructor(@ApplicationContext private val contex
                     .setContentIntent(pending).setAutoCancel(true).build())
         }
     }
+    // The channel is registered once by PixlitApplication; this id must match it.
     companion object { const val CHANNEL = "art_show_reminders" }
 }
