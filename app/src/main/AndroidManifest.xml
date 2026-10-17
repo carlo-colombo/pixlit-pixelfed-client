@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- The upload runs in a WorkManager foreground service (UP-05) so it survives the app leaving
+         the foreground; the worker is a data-sync job and declares FOREGROUND_SERVICE_DATA_SYNC. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- ACCESS_MEDIA_LOCATION is kept: ImageUtils reads GPS EXIF from the granted URI. -->
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
 

@@ -1,6 +1,7 @@
 package ovh.litapp.pixlit.data.status
 
 import android.util.Log
+import ovh.litapp.pixlit.data.Fetch
 import ovh.litapp.pixlit.data.api.PixelfedApi
 import ovh.litapp.pixlit.data.api.PixelfedApiFactory
 import ovh.litapp.pixlit.data.api.StatusItem
@@ -36,26 +37,31 @@ class StatusRemoteSource @Inject constructor(
      * serves Room data. [lastRefreshAtMs] advances on a failed attempt too, so a burst of callers
      * does not retry a broken endpoint — a forced refresh (pull-to-refresh) always does.
      *
-     * Returns an empty list when neither the network nor Room has data; the facade decides the
-     * bundled-asset fallback.
+     * The result is typed (DATA-05): an in-TTL Room read is [Fetch.Fresh], a failed refresh that
+     * still has rows to serve is [Fetch.Cached] with the cause attached, and only "nothing usable"
+     * is [Fetch.Failed]. The facade decides the bundled-asset fallback.
      */
     suspend fun loadStatuses(
         instanceUrl: String,
         accessToken: String,
         forceRefresh: Boolean
-    ): List<StatusItem> = refreshMutex.withLock {
+    ): Fetch<List<StatusItem>> = refreshMutex.withLock {
         if (lastRefreshInstanceUrl != instanceUrl) {
             lastRefreshInstanceUrl = instanceUrl
             lastRefreshAtMs = 0L
         }
         if (!shouldRefreshStatuses(forceRefresh, lastRefreshAtMs, System.currentTimeMillis())) {
-            return@withLock readCachedStatuses(instanceUrl)
+            return@withLock Fetch.Fresh(readCachedStatuses(instanceUrl))
         }
         lastRefreshAtMs = System.currentTimeMillis()
-        fetchFromApi(instanceUrl, accessToken).getOrElse { error ->
-            Log.w(TAG, "loadStatuses: API fetch failed, using cached statuses", error)
-            readCachedStatuses(instanceUrl)
-        }
+        fetchFromApi(instanceUrl, accessToken).fold(
+            onSuccess = { Fetch.Fresh(it) },
+            onFailure = { error ->
+                Log.w(TAG, "loadStatuses: API fetch failed", error)
+                val cached = readCachedStatuses(instanceUrl)
+                if (cached.isEmpty()) Fetch.Failed(error) else Fetch.Cached(cached, error)
+            }
+        )
     }
 
     suspend fun moreStatuses(
