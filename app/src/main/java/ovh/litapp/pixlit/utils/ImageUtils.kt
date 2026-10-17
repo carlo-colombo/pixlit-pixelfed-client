@@ -430,7 +430,7 @@ object ImageUtils {
      * (b) does not decode smaller than the requested size when the source allows it, so the
      * caller never has to upscale.
      */
-    private fun calculateBoundedInSampleSize(
+    internal fun calculateBoundedInSampleSize(
         options: BitmapFactory.Options,
         reqWidth: Int,
         reqHeight: Int

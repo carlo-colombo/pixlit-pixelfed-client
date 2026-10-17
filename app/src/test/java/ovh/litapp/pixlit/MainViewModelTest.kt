@@ -9,12 +9,14 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import ovh.litapp.pixlit.data.auth.SessionState
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.R
@@ -33,6 +35,7 @@ class MainViewModelTest {
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         every { tokenManager.isLoggedIn() } returns false
+        every { tokenManager.sessionState } returns MutableStateFlow(SessionState.LoggedOut)
         every { context.getString(R.string.redirect_uri) } returns "pixelfed-app://oauth"
         viewModel = MainViewModel(context, tokenManager, repository)
     }
