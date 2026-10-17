@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -72,11 +73,15 @@ private fun RecentPostCard(status: StatusItem, onCopyPost: (String) -> Unit) {
     val rawText = status.text?.takeIf { it.isNotBlank() }
         ?: status.content?.takeIf { it.isNotBlank() }
         ?: status.description.orEmpty()
-    val text = Html.fromHtml(rawText, Html.FROM_HTML_MODE_LEGACY).toString().trim()
     val tags = status.tags.orEmpty().mapNotNull { it.name?.takeIf(String::isNotBlank) }
         .map { "#${it.removePrefix("#")}" }
-    val missingTags = tags.filterNot { tag ->
-        Regex("(?i)(?<!\\w)${Regex.escape(tag)}(?!\\w)").containsMatchIn(text)
+    val text = remember(rawText) {
+        Html.fromHtml(rawText, Html.FROM_HTML_MODE_LEGACY).toString().trim()
+    }
+    val missingTags = remember(text, tags) {
+        tags.filterNot { tag ->
+            Regex("(?i)(?<!\\w)${Regex.escape(tag)}(?!\\w)").containsMatchIn(text)
+        }
     }
     val copyText = listOf(text, missingTags.joinToString(" ").takeIf { it.isNotBlank() })
         .filterNotNull().joinToString("\n\n")
