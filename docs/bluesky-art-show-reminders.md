@@ -15,7 +15,7 @@ Remind the user Friday evening and Saturday morning to post a photo for the curr
 | Times | Configurable in-app (no enable/disable toggle) |
 | Tap | Open upload and prefill `#BlueSkyArtShow` + theme tag |
 | Enablement | Always on; request `POST_NOTIFICATIONS` on launch |
-| Scheduling | WorkManager one-shot works with computed delay (not exact alarms) |
+| Scheduling | Inexact idle-tolerant `AlarmManager` alarms, one per weekday (not exact alarms) |
 | Timezone | `ZoneId.systemDefault()` |
 
 ## Data: theme from Bluesky
@@ -38,15 +38,24 @@ Reuse existing OkHttp/Gson via a small `BlueskyApi` Retrofit interface + `Bluesk
 
 ## Scheduling
 
-Greenfield: **WorkManager** (survives reboot, no exact-alarm permission).
+The shipped design uses **`AlarmManager`** inexact, idle-tolerant alarms, not a WorkManager delay
+(`ReminderScheduler.kt:28-43`).
 
-- Two unique one-shot works (`art_show_friday`, `art_show_saturday`)
-- Delay = next occurrence of that weekday + saved hour/minute
-- Worker: fetch theme → notify → enqueue the following week
-- Time change → cancel + reschedule both
-- `ExistingWorkPolicy.REPLACE`
+- One alarm per weekday, keyed by a `PendingIntent` with request code `day.value` (Friday 5, Saturday 6)
+- Trigger instant = now + `nextRunDelay(day, time)`, where `nextRunDelay` (`ReminderScheduler.kt:56-60`)
+  resolves the next occurrence of that weekday at the saved hour/minute in `ZoneId.systemDefault()`
+- `ArtShowReminderReceiver` posts the reminder immediately, re-schedules the following week and
+  enqueues the optional theme fetch (`ArtShowReminderReceiver.kt:18-34`)
+- WorkManager runs only that theme fetch (`ArtShowReminderWorker`), never the reminder timing
+  (`ArtShowReminderReceiver.kt:26-33`)
+- Reboot / time / timezone change → `ReminderRescheduleReceiver` cancels and re-schedules both alarms
+  (`ReminderRescheduleReceiver.kt:13-14`; manifest actions `BOOT_COMPLETED`, `MY_PACKAGE_REPLACED`,
+  `TIME_SET`, `TIMEZONE_CHANGED`)
 
-WorkManager is accurate enough for evening/morning reminders; do not use `SCHEDULE_EXACT_ALARM`.
+Alarms beat a WorkManager delay for a wall-clock reminder: WorkManager's minimum delay and Doze
+deferral are unbounded, whereas `setAndAllowWhileIdle` fires from a Doze maintenance window at the
+requested wall-clock instant. It is still inexact (the OS may defer it), which is acceptable for
+evening/morning reminders; do not use `SCHEDULE_EXACT_ALARM`.
 
 ## Notifications
 
@@ -84,10 +93,14 @@ New types (suggested):
 
 ## Tests
 
-- Theme parser on both sample posts + failure cases
-- Next-run delay (before/after Friday 20:00, timezone)
+- Theme parser on both sample posts + failure cases (`BlueskyArtShowRepositoryTest`)
+- Next-run delay, including a spring-forward DST boundary
+  (`ReminderSchedulerTest.next run crosses spring forward without an hour of drift`)
+- `PendingIntent` identity/flags for `cancel()`, and the Friday/Saturday preference defaults and
+  out-of-range clamping (`ReminderSchedulerTest`)
 - Prefill does not duplicate tags
-- Worker shows fallback notification when Bluesky fails (MockK)
+- `ArtShowReminderWorker` posts the untitled fallback notification when the Bluesky theme fetch fails
+  (`ReminderSchedulerTest.worker posts an untitled fallback notification when the theme fetch fails`)
 
 ## Out of scope
 
