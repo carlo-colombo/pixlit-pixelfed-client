@@ -21,7 +21,7 @@ class ArtShowNotifier @Inject constructor(@ApplicationContext private val contex
         val pending = PendingIntent.getActivity(context, 42, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         if (NotificationManagerCompat.from(context).areNotificationsEnabled()) {
             NotificationManagerCompat.from(context).notify(if (saturday) 2 else 1,
-                NotificationCompat.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_launcher_foreground)
+                NotificationCompat.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_stat_art_show)
                     .setContentTitle(title).setContentText(if (saturday) "Good morning, share your photo for this week's theme." else "It's time to share a photo for this week's theme.")
                     .setContentIntent(pending).setAutoCancel(true).build())
         }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Monochrome status-bar icon for art-show reminders. Notification small icons are drawn as a
+     white silhouette on a transparent background (the system tints them), so this must not carry
+     color or a background. It replaces the adaptive launcher foreground, which rendered as a
+     coloured crop in the status bar. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2 C12.5,7 17,11.5 22,12 C17,12.5 12.5,17 12,22 C11.5,17 7,12.5 2,12 C7,11.5 11.5,7 12,2 Z" />
+</vector>
