@@ -59,10 +59,15 @@ android {
             applicationIdSuffix ".dev"
             manifestPlaceholders.appLabel = "Pixlit Dev"
             manifestPlaceholders.appAuthRedirectScheme = "pixlit-dev"
+            // Debug tooling (Debug tab, Simulate Art Show Notification) is dev-only. The env
+            // dimension is the single source of this flag; distribution flavors (local/ci) must
+            // not also set it or the higher-priority dimension would override the env value.
+            buildConfigField("boolean", "DEBUG_TOOLS", "true")
         }
         prod {
             dimension "env"
             manifestPlaceholders.appLabel = "Pixlit"
+            buildConfigField("boolean", "DEBUG_TOOLS", "false")
         }
     }
 

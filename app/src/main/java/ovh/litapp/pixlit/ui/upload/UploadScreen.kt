@@ -38,6 +38,7 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
+import ovh.litapp.pixlit.BuildConfig
 import ovh.litapp.pixlit.data.api.CollectionItem
 import ovh.litapp.pixlit.data.api.PlaceItem
 import ovh.litapp.pixlit.data.api.StatusItem
@@ -256,7 +257,16 @@ fun UploadContent(
     onSimulateNotification: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Upload", "Social", "Last", "Debug", "Settings")
+    // The Debug tab is flanked by Upload/Social/Last (0-2) and Settings, so omitting it shifts
+    // Settings from index 4 to 3. The dispatch below keys off BuildConfig.DEBUG_TOOLS as well as the
+    // index, so prod's index 3 resolves to Settings and R8 can delete the dead Debug branch.
+    val tabs = buildList {
+        add("Upload")
+        add("Social")
+        add("Last")
+        if (BuildConfig.DEBUG_TOOLS) add("Debug")
+        add("Settings")
+    }
 
     val maxPhotos = 6
     val uploadScrollState = rememberScrollState()
@@ -289,7 +299,7 @@ fun UploadContent(
     }
 
     LaunchedEffect(selectedTab) {
-        if (selectedTab == 3) onRefreshCacheSummary()
+        if (BuildConfig.DEBUG_TOOLS && selectedTab == 3) onRefreshCacheSummary()
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -370,7 +380,7 @@ fun UploadContent(
                         ) {
                             OutlinedButton(
                                 onClick = { onShiftLeft(currentPage) },
-                                enabled = currentPage > 0
+                                enabled = !isUploading && currentPage > 0
                             ) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Shift Left")
                                 Spacer(Modifier.width(4.dp))
@@ -379,6 +389,7 @@ fun UploadContent(
 
                             OutlinedButton(
                                 onClick = { onRemoveImage(currentPage) },
+                                enabled = !isUploading,
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                             ) {
                                 Icon(Icons.Default.Delete, "Remove Photo")
@@ -388,7 +399,7 @@ fun UploadContent(
 
                             OutlinedButton(
                                 onClick = { onShiftRight(currentPage) },
-                                enabled = currentPage < selectedImageUris.size - 1
+                                enabled = !isUploading && currentPage < selectedImageUris.size - 1
                             ) {
                                 Text("Shift Right")
                                 Spacer(Modifier.width(4.dp))
@@ -425,13 +436,14 @@ fun UploadContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { onResizeToggled(!resizeTo8Mb) }
+                            .clickable(enabled = !isUploading) { onResizeToggled(!resizeTo8Mb) }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(
                             checked = resizeTo8Mb,
-                            onCheckedChange = { onResizeToggled(it) }
+                            onCheckedChange = { onResizeToggled(it) },
+                            enabled = !isUploading
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -444,7 +456,7 @@ fun UploadContent(
 
                     Button(
                         onClick = { galleryLauncher.launch("image/*") },
-                        enabled = selectedImageUris.size < maxPhotos,
+                        enabled = !isUploading && selectedImageUris.size < maxPhotos,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
@@ -681,7 +693,7 @@ fun UploadContent(
                         .padding(16.dp)
                 )
             }
-        } else if (selectedTab == 3) {
+        } else if (BuildConfig.DEBUG_TOOLS && selectedTab == 3) {
             // Debug Tab
             Column(
                 modifier = Modifier
