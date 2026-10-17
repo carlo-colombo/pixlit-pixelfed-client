@@ -7,9 +7,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
 import androidx.compose.ui.tooling.preview.Preview
+import ovh.litapp.pixlit.R
 import ovh.litapp.pixlit.ui.theme.PixlitTheme
 import ovh.litapp.pixlit.data.repository.TagCount
 
@@ -29,7 +31,7 @@ fun TagSelectionCloud(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Top Tags",
+                text = stringResource(R.string.tags_top),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -39,7 +41,7 @@ fun TagSelectionCloud(
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
-                    contentDescription = "Refresh tags"
+                    contentDescription = stringResource(R.string.tags_refresh_cd)
                 )
             }
         }
@@ -65,7 +67,7 @@ fun TagSelectionCloud(
             }
         } else {
             Text(
-                text = "No tags found",
+                text = stringResource(R.string.tags_none),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 4.dp)

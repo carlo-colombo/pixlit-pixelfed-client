@@ -3,7 +3,6 @@ package ovh.litapp.pixlit.ui.auth
 import android.content.Context
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -12,6 +11,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -28,7 +30,8 @@ fun LoginScreen(
     context: Context,
     tokenManager: TokenManager,
     repository: PixelfedRepository,
-    initialErrorMessage: String? = null
+    initialErrorMessage: String? = null,
+    onGenerateOAuthState: () -> String
 ) {
     val scope = rememberCoroutineScope()
     val redirectUri = context.getString(R.string.redirect_uri)
@@ -90,7 +93,10 @@ fun LoginScreen(
                     .appendQueryParameter("client_id", clientIdToUse)
                     .appendQueryParameter("redirect_uri", redirectUri)
                     .appendQueryParameter("response_type", "code")
-                    .appendQueryParameter("scope", "read write follow")
+                    // Uploader scope only: no DMs and no follows are requested.
+                    .appendQueryParameter("scope", "read write")
+                    // Anti-CSRF state, verified in MainViewModel.handleIntent before the exchange.
+                    .appendQueryParameter("state", onGenerateOAuthState())
                     .build()
 
                 val customTabsIntent = CustomTabsIntent.Builder().build()
@@ -115,17 +121,20 @@ fun LoginContent(
     var manualClientId by remember { mutableStateOf("") }
     var manualClientSecret by remember { mutableStateOf("") }
     var showManualCredentials by remember { mutableStateOf(false) }
+    val expandedState = stringResource(R.string.a11y_state_expanded)
+    val collapsedState = stringResource(R.string.a11y_state_collapsed)
+    val missingUrlError = stringResource(R.string.login_missing_url_error)
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .systemBarsPadding()
+            .navigationBarsPadding()
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Connect to Pixlit",
+            text = stringResource(R.string.login_title),
             style = MaterialTheme.typography.headlineMedium
         )
 
@@ -134,7 +143,7 @@ fun LoginContent(
         OutlinedTextField(
             value = instanceUrl,
             onValueChange = { instanceUrl = it },
-            label = { Text("Pixelfed Instance URL") },
+            label = { Text(stringResource(R.string.login_instance_url_label)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
@@ -142,16 +151,24 @@ fun LoginContent(
         Spacer(modifier = Modifier.height(12.dp))
 
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { showManualCredentials = !showManualCredentials }
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start
         ) {
-            Text(
-                text = if (showManualCredentials) "▲ Hide manual API credentials" else "▼ Advanced: Enter Client ID & Secret",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
+            TextButton(
+                onClick = { showManualCredentials = !showManualCredentials },
+                modifier = Modifier.semantics {
+                    stateDescription = if (showManualCredentials) expandedState else collapsedState
+                }
+            ) {
+                Text(
+                    text = stringResource(
+                        if (showManualCredentials) R.string.login_advanced_hide
+                        else R.string.login_advanced_show
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
 
         if (showManualCredentials) {
@@ -159,7 +176,7 @@ fun LoginContent(
             OutlinedTextField(
                 value = manualClientId,
                 onValueChange = { manualClientId = it },
-                label = { Text("Client ID (Optional)") },
+                label = { Text(stringResource(R.string.login_client_id_label)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -167,7 +184,7 @@ fun LoginContent(
             OutlinedTextField(
                 value = manualClientSecret,
                 onValueChange = { manualClientSecret = it },
-                label = { Text("Client Secret (Optional)") },
+                label = { Text(stringResource(R.string.login_client_secret_label)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -197,7 +214,7 @@ fun LoginContent(
         Button(
             onClick = {
                 if (instanceUrl.isBlank()) {
-                    uiState.onLoginFailed("Please enter instance URL")
+                    uiState.onLoginFailed(missingUrlError)
                     return@Button
                 }
                 uiState.onLoginStarted()
@@ -212,7 +229,7 @@ fun LoginContent(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
             } else {
-                Text("Log In with Pixlit")
+                Text(stringResource(R.string.login_button))
             }
         }
     }

@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import ovh.litapp.pixlit.data.auth.SessionState
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
@@ -39,6 +40,10 @@ class MainViewModel @Inject constructor(
 
     private val _sharedImageUris = MutableStateFlow<List<Uri>>(emptyList())
     val sharedImageUris: StateFlow<List<Uri>> = _sharedImageUris.asStateFlow()
+
+    // Anti-CSRF `state` for the in-flight authorization redirect. In-memory only: the Custom Tab
+    // normally returns to the same process, and SEC-03 is scoped to verifying the redirect here.
+    private var pendingOAuthState: String? = null
 
     init {
         viewModelScope.launch {
@@ -92,6 +97,16 @@ class MainViewModel @Inject constructor(
 
             val code = uri.getQueryParameter("code")
             if (code != null) {
+                // Verify the redirect belongs to an authorization request this app started before
+                // exchanging the code; an absent or mismatched state is treated as an auth error.
+                // TODO(SEC-03 PKCE): plumb code_verifier through SessionRepository/PixelfedApi.
+                val expectedState = pendingOAuthState
+                val returnedState = uri.getQueryParameter("state")
+                if (expectedState == null || returnedState != expectedState) {
+                    _authError.value = "OAuth state mismatch — sign-in was not completed"
+                    return
+                }
+                pendingOAuthState = null
                 _isAuthProcessing.value = true
                 _authError.value = null
                 viewModelScope.launch {
@@ -113,6 +128,16 @@ class MainViewModel @Inject constructor(
     }
 
     fun consumePrefill() { _prefillTheme.value = null }
+
+    /**
+     * Generates a random anti-CSRF `state` and remembers it until the authorization redirect
+     * returns. [handleIntent] refuses to exchange a code whose `state` does not match.
+     */
+    fun createOAuthState(): String {
+        val state = UUID.randomUUID().toString()
+        pendingOAuthState = state
+        return state
+    }
 
     fun consumeSharedImageUris() { _sharedImageUris.value = emptyList() }
 

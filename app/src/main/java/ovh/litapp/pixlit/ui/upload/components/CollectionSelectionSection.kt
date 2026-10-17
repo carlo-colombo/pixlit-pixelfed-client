@@ -10,8 +10,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
+import com.google.gson.JsonPrimitive
 import ovh.litapp.pixlit.data.api.CollectionItem
+import ovh.litapp.pixlit.ui.theme.PixlitTheme
 
 /**
  * Collection picker with an inline create dialog.
@@ -170,6 +175,33 @@ fun CollectionSelectionSection(
                     Text("Cancel")
                 }
             }
+        )
+    }
+}
+
+private class SampleCollectionsProvider : PreviewParameterProvider<List<CollectionItem>> {
+    override val values = sequenceOf(
+        listOf(
+            CollectionItem(id = JsonPrimitive("1"), title = "Street photography"),
+            CollectionItem(id = JsonPrimitive("2"), title = "Travel")
+        ),
+        emptyList()
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun CollectionSelectionSectionPreview(
+    @PreviewParameter(SampleCollectionsProvider::class) collections: List<CollectionItem>
+) {
+    PixlitTheme {
+        CollectionSelectionSection(
+            collections = collections,
+            selectedCollectionIds = setOf("1"),
+            isLoadingCollections = false,
+            onCollectionToggle = {},
+            onCreateCollection = { _, _ -> },
+            modifier = Modifier.padding(16.dp)
         )
     }
 }

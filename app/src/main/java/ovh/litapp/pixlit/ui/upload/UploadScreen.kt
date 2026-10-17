@@ -1,6 +1,12 @@
 package ovh.litapp.pixlit.ui.upload
 
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -9,8 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,12 +25,16 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -36,8 +45,13 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import kotlinx.coroutines.launch
 import ovh.litapp.pixlit.BuildConfig
 import ovh.litapp.pixlit.data.api.CollectionItem
 import ovh.litapp.pixlit.data.api.PlaceItem
@@ -178,6 +192,7 @@ fun UploadScreen(
         onShiftLeft = { viewModel.shiftLeft(it) },
         onShiftRight = { viewModel.shiftRight(it) },
         onRemoveImage = { viewModel.removeImageAt(it) },
+        onInsertImage = { index, uri -> viewModel.insertImageAt(index, uri) },
         onResizeToggled = { viewModel.onResizeToggled(it) },
         onCaptionChanged = { viewModel.onCaptionChanged(it) },
         onInsertHash = { viewModel.insertHash() },
@@ -240,6 +255,7 @@ fun UploadContent(
     onShiftLeft: (Int) -> Unit = {},
     onShiftRight: (Int) -> Unit = {},
     onRemoveImage: (Int) -> Unit = {},
+    onInsertImage: (Int, Uri) -> Unit = { _, _ -> },
     onResizeToggled: (Boolean) -> Unit = {},
     onCaptionChanged: (TextFieldValue) -> Unit = {},
     onInsertHash: () -> Unit = {},
@@ -257,32 +273,40 @@ fun UploadContent(
     reminderScheduler: ReminderScheduler? = null,
     onSimulateNotification: () -> Unit = {}
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
-    // The Debug tab is flanked by Upload/Social/Last (0-2) and Settings, so omitting it shifts
+    var selectedTab by rememberSaveable { mutableStateOf(0) }
+    // The Debug tab is flanked by Upload/Social/Recent (0-2) and Settings, so omitting it shifts
     // Settings from index 4 to 3. The dispatch below keys off BuildConfig.DEBUG_TOOLS as well as the
     // index, so prod's index 3 resolves to Settings and R8 can delete the dead Debug branch.
     val tabs = buildList {
-        add("Upload")
-        add("Social")
-        add("Last")
-        if (BuildConfig.DEBUG_TOOLS) add("Debug")
-        add("Settings")
+        add(tabUpload)
+        add(tabSocial)
+        add(tabRecent)
+        if (BuildConfig.DEBUG_TOOLS) add(tabDebug)
+        add(tabSettings)
     }
 
     val maxPhotos = 6
     val uploadScrollState = rememberScrollState()
-    val captionBringIntoViewRequester = remember { BringIntoViewRequester() }
-    var captionFocused by remember { mutableStateOf(false) }
     var showTagPopup by remember { mutableStateOf(false) }
     val tagSearchFocusRequester = remember { FocusRequester() }
-    val density = LocalDensity.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+    val removedMessage = stringResource(R.string.upload_removed_snackbar)
+    val undoLabel = stringResource(R.string.action_undo)
+    val tabUpload = stringResource(R.string.tab_upload)
+    val tabSocial = stringResource(R.string.tab_social)
+    val tabRecent = stringResource(R.string.tab_recent)
+    val tabDebug = stringResource(R.string.tab_debug)
+    val tabSettings = stringResource(R.string.tab_settings)
+    // Tracks the tab the previously-rendered composition showed, so restoring a saved tab does not
+    // re-fire the Debug tab's refresh side effect.
+    var lastSelectedTab by rememberSaveable { mutableStateOf(selectedTab) }
 
-    LaunchedEffect(captionFocused) {
-        if (captionFocused) {
-            kotlinx.coroutines.delay(100)
-            captionBringIntoViewRequester.bringIntoView()
-        }
-    }
+    // System back returns to the Upload tab instead of leaving the app; on Upload it stays disabled
+    // so back still exits.
+    BackHandler(enabled = selectedTab != 0) { selectedTab = 0 }
+
     val pagerState = rememberPagerState(
         initialPage = 0,
         pageCount = { selectedImageUris.size }
@@ -300,19 +324,34 @@ fun UploadContent(
     }
 
     LaunchedEffect(selectedTab) {
-        if (BuildConfig.DEBUG_TOOLS && selectedTab == 3) onRefreshCacheSummary()
+        if (BuildConfig.DEBUG_TOOLS && selectedTab == 3 && lastSelectedTab != 3) onRefreshCacheSummary()
+        lastSelectedTab = selectedTab
+    }
+
+    // Upload success/failure is transient, so it is surfaced through the scaffold's snackbar host
+    // instead of lingering as inline text. Errors are dismissable and stay a little longer.
+    LaunchedEffect(statusMessage, isError) {
+        if (statusMessage != null) {
+            snackbarHostState.showSnackbar(
+                message = statusMessage,
+                withDismissAction = isError,
+                duration = if (isError) SnackbarDuration.Long else SnackbarDuration.Short
+            )
+        }
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxPhotos)
     ) { uris ->
-        onAddImages(uris)
+        if (uris.isNotEmpty()) onAddImages(uris)
     }
 
     val hashtagContext = findHashtagContext(captionState)
-    var tagSearchQuery by remember { mutableStateOf("") }
+    var tagSearchQuery by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(hashtagContext?.start, hashtagContext?.end, hashtagContext?.query) {
-        tagSearchQuery = hashtagContext?.query.orEmpty()
+        // Only sync from the caption; a null context (e.g. after rotation) must not clobber the
+        // saveable query.
+        if (hashtagContext != null) tagSearchQuery = hashtagContext.query
     }
     LaunchedEffect(tagSearchQuery) {
         if (hashtagContext != null) onTagSearchQueryChanged(tagSearchQuery)
@@ -328,18 +367,34 @@ fun UploadContent(
         .distinctBy { it.lowercase() }
         .take(30)
 
+    if (showLogoutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirm = false },
+            title = { Text(stringResource(R.string.logout_confirm_title)) },
+            text = { Text(stringResource(R.string.logout_confirm_message)) },
+            confirmButton = {
+                Button(onClick = {
+                    showLogoutConfirm = false
+                    onLogout()
+                }) {
+                    Text(stringResource(R.string.logout_confirm_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirm = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
     Scaffold(
-        modifier = Modifier.systemBarsPadding(),
+        modifier = Modifier.navigationBarsPadding(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Column {
-                TopAppBar(
-                    title = { Text("Upload to Pixlit") },
-                    actions = {
-                        TextButton(onClick = onLogout) {
-                            Text("Logout")
-                        }
-                    }
-                )
+                TopAppBar(title = { Text(stringResource(R.string.upload_header_title)) })
                 PrimaryScrollableTabRow(selectedTabIndex = selectedTab) {
                     tabs.forEachIndexed { index, title ->
                         Tab(
@@ -383,28 +438,44 @@ fun UploadContent(
                                 onClick = { onShiftLeft(currentPage) },
                                 enabled = !isUploading && currentPage > 0
                             ) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Shift Left")
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.upload_shift_left))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Shift Left")
+                                Text(stringResource(R.string.upload_shift_left))
                             }
 
                             OutlinedButton(
-                                onClick = { onRemoveImage(currentPage) },
+                                onClick = {
+                                    val index = currentPage
+                                    val removedUri = selectedImageUris.getOrNull(index)
+                                    onRemoveImage(index)
+                                    if (removedUri != null) {
+                                        scope.launch {
+                                            val result = snackbarHostState.showSnackbar(
+                                                message = removedMessage,
+                                                actionLabel = undoLabel,
+                                                duration = SnackbarDuration.Short
+                                            )
+                                            if (result == SnackbarResult.ActionPerformed) {
+                                                onInsertImage(index, removedUri)
+                                            }
+                                        }
+                                    }
+                                },
                                 enabled = !isUploading,
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                             ) {
-                                Icon(Icons.Default.Delete, "Remove Photo")
+                                Icon(Icons.Default.Delete, stringResource(R.string.upload_remove_photo_cd))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Remove")
+                                Text(stringResource(R.string.upload_remove))
                             }
 
                             OutlinedButton(
                                 onClick = { onShiftRight(currentPage) },
                                 enabled = !isUploading && currentPage < selectedImageUris.size - 1
                             ) {
-                                Text("Shift Right")
+                                Text(stringResource(R.string.upload_shift_right))
                                 Spacer(Modifier.width(4.dp))
-                                Icon(Icons.AutoMirrored.Filled.ArrowForward, "Shift Right")
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.upload_shift_right))
                             }
                         }
 
@@ -437,18 +508,23 @@ fun UploadContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable(enabled = !isUploading) { onResizeToggled(!resizeTo8Mb) }
+                            .toggleable(
+                                value = resizeTo8Mb,
+                                role = Role.Checkbox,
+                                enabled = !isUploading,
+                                onValueChange = onResizeToggled
+                            )
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(
                             checked = resizeTo8Mb,
-                            onCheckedChange = { onResizeToggled(it) },
+                            onCheckedChange = null,
                             enabled = !isUploading
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Resize down to 8MB",
+                            text = stringResource(R.string.upload_resize_label),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -456,34 +532,44 @@ fun UploadContent(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Button(
-                        onClick = { galleryLauncher.launch("image/*") },
+                        onClick = {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
                         enabled = !isUploading && selectedImageUris.size < maxPhotos,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             when {
-                                selectedImageUris.isEmpty() -> "Select Photos from Gallery (up to 6)"
-                                selectedImageUris.size < maxPhotos -> "Add More Photos (${selectedImageUris.size}/$maxPhotos)"
-                                else -> "Maximum Photos Reached (6/6)"
+                                selectedImageUris.isEmpty() -> stringResource(R.string.upload_select_photos, maxPhotos)
+                                selectedImageUris.size < maxPhotos -> stringResource(R.string.upload_add_more_photos, selectedImageUris.size, maxPhotos)
+                                else -> stringResource(R.string.upload_max_photos, maxPhotos, maxPhotos)
                             }
                         )
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    val cursor = captionState.selection.end.coerceIn(0, captionState.text.length)
-                    val textBeforeCursor = captionState.text.substring(0, cursor)
-                    val lineStart = textBeforeCursor.lastIndexOf('\n') + 1
-                    val lineCharacterCount = cursor - lineStart
-                    val cursorX = with(density) {
-                        (16.dp.toPx() + lineCharacterCount * 8.dp.toPx()).toInt()
+                    var captionLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+                    val caretOffset = captionState.selection.end
+                    // Anchor the hashtag popup to the measured caret instead of an assumed glyph
+                    // width; before the first layout it falls back to the field's leading edge.
+                    val cursorX = remember(captionLayout, caretOffset) {
+                        val layout = captionLayout
+                        if (layout == null) {
+                            0
+                        } else {
+                            val offset = caretOffset.coerceIn(0, layout.layoutInput.text.length)
+                            layout.getHorizontalPosition(offset, usePrimaryDirection = true).toInt()
+                        }
                     }
 
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
                             value = captionState,
                             onValueChange = { onCaptionChanged(it) },
-                            label = { Text("Write a caption...") },
+                            label = { Text(stringResource(R.string.upload_caption_label)) },
                             trailingIcon = {
                                 TextButton(
                                     onClick = {
@@ -497,10 +583,9 @@ fun UploadContent(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(240.dp)
-                                .bringIntoViewRequester(captionBringIntoViewRequester)
-                                .onFocusChanged { captionFocused = it.isFocused },
-                            maxLines = 10
+                                .heightIn(min = 120.dp),
+                            maxLines = 10,
+                            onTextLayout = { captionLayout = it }
                         )
 
                         if (showTagPopup && hashtagContext != null) {
@@ -530,7 +615,7 @@ fun UploadContent(
                                         OutlinedTextField(
                                             value = tagSearchQuery,
                                             onValueChange = { tagSearchQuery = it.removePrefix("#") },
-                                            placeholder = { Text("Search tags") },
+                                            placeholder = { Text(stringResource(R.string.upload_caption_search_tags)) },
                                             singleLine = true,
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -539,7 +624,7 @@ fun UploadContent(
                                         Spacer(modifier = Modifier.height(4.dp))
                                         if (tagSuggestions.isEmpty()) {
                                             Text(
-                                                text = "No matching tags",
+                                                text = stringResource(R.string.upload_no_matching_tags),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 modifier = Modifier.padding(8.dp)
                                             )
@@ -577,13 +662,13 @@ fun UploadContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "pf: $charCount/$pfLimit",
+                            text = stringResource(R.string.upload_counter_pf, charCount, pfLimit),
                             style = MaterialTheme.typography.bodySmall,
                             color = if (charCount > pfLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "bs: $charCount/$bsLimit",
+                            text = stringResource(R.string.upload_counter_bs, charCount, bsLimit),
                             style = MaterialTheme.typography.bodySmall,
                             color = if (charCount > bsLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -628,7 +713,8 @@ fun UploadContent(
                 Surface(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .imePadding(),
                     tonalElevation = 3.dp,
                     shadowElevation = 8.dp
                 ) {
@@ -638,15 +724,6 @@ fun UploadContent(
                             .padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        if (statusMessage != null) {
-                            Text(
-                                text = statusMessage,
-                                color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-                        }
-
                         Button(
                             onClick = { onUpload() },
                             enabled = !isUploading && selectedImageUris.isNotEmpty(),
@@ -658,8 +735,17 @@ fun UploadContent(
                                     color = MaterialTheme.colorScheme.onPrimary
                                 )
                             } else {
-                                val text = if (selectedImageUris.size > 1) "Upload ${selectedImageUris.size} Photos" else "Upload Photo"
-                                Text(text)
+                                Text(
+                                    if (selectedImageUris.size > 1) {
+                                        pluralStringResource(
+                                            R.plurals.upload_photos,
+                                            selectedImageUris.size,
+                                            selectedImageUris.size
+                                        )
+                                    } else {
+                                        stringResource(R.string.upload_photo)
+                                    }
+                                )
                             }
                         }
                     }
@@ -798,7 +884,12 @@ fun UploadContent(
                 }
             }
         } else {
-            SettingsContent(reminderPreferences, reminderScheduler, Modifier.padding(padding))
+            SettingsContent(
+                preferences = reminderPreferences,
+                scheduler = reminderScheduler,
+                onLogout = { showLogoutConfirm = true },
+                modifier = Modifier.padding(padding)
+            )
         }
     }
 }
@@ -807,6 +898,7 @@ fun UploadContent(
 private fun SettingsContent(
     preferences: ReminderPreferences?,
     scheduler: ReminderScheduler?,
+    onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -820,6 +912,14 @@ private fun SettingsContent(
             ReminderSettings(preferences, scheduler)
         }
         AboutSection()
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = onLogout,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+        ) {
+            Text(stringResource(R.string.action_logout))
+        }
     }
 }
 
@@ -829,8 +929,101 @@ private fun ReminderSettings(preferences: ReminderPreferences, scheduler: Remind
     var saturday by remember { mutableStateOf(preferences.saturday) }
     Text("BlueSkyArtShow reminders", style = MaterialTheme.typography.headlineSmall)
     Text("Reminders are always on. Times use your device timezone.", style = MaterialTheme.typography.bodyMedium)
+    NotificationPermissionNotice()
     ReminderTimeRow("Friday", friday) { time -> friday = time; preferences.friday = time; scheduler.rescheduleAll() }
     ReminderTimeRow("Saturday", saturday) { time -> saturday = time; preferences.saturday = time; scheduler.rescheduleAll() }
+}
+
+/**
+ * Prompts for POST_NOTIFICATIONS only here, where enabling a reminder is the action that needs it,
+ * and surfaces the denied state (read from the system, not from a cached "already asked" flag) so a
+ * denied permission does not make the reminder fail invisibly. Tapping again re-prompts, and the
+ * system-settings route lets a permanent denial be reversed without reinstalling.
+ */
+@Composable
+private fun NotificationPermissionNotice(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var enabled by remember {
+        mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled())
+    }
+    var showRationale by remember { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        enabled = granted || NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+    val lifecycleOwner = context as? LifecycleOwner
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                enabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+            }
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
+    }
+
+    if (enabled) {
+        return
+    }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.notifications_disabled_title),
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                text = stringResource(R.string.notifications_disabled_message),
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { showRationale = true }) {
+                    Text(stringResource(R.string.notifications_enable))
+                }
+                TextButton(onClick = { context.openNotificationSettings() }) {
+                    Text(stringResource(R.string.notifications_open_settings))
+                }
+            }
+        }
+    }
+
+    if (showRationale) {
+        AlertDialog(
+            onDismissRequest = { showRationale = false },
+            title = { Text(stringResource(R.string.notifications_rationale_title)) },
+            text = { Text(stringResource(R.string.notifications_rationale_message)) },
+            confirmButton = {
+                Button(onClick = {
+                    showRationale = false
+                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }) {
+                    Text(stringResource(R.string.action_allow))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRationale = false }) {
+                    Text(stringResource(R.string.action_not_now))
+                }
+            }
+        )
+    }
+}
+
+private fun Context.openNotificationSettings() {
+    startActivity(
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
 }
 
 @Composable
@@ -866,6 +1059,18 @@ fun UploadScreenPreview() {
             originalMetadata = ImageMetadata(1024 * 1024 * 5, 3000, 2000),
             resizedMetadata = null,
             isCalculatingResized = false
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun SettingsContentPreview() {
+    PixlitTheme {
+        SettingsContent(
+            preferences = null,
+            scheduler = null,
+            onLogout = {}
         )
     }
 }

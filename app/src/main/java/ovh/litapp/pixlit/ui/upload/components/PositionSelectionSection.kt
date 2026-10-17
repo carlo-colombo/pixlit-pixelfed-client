@@ -13,8 +13,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
+import com.google.gson.JsonPrimitive
 import ovh.litapp.pixlit.data.api.PlaceItem
+import ovh.litapp.pixlit.ui.theme.PixlitTheme
 
 @Composable
 fun PositionSelectionSection(
@@ -193,5 +198,38 @@ fun PositionSelectionSection(
                 )
             }
         }
+    }
+}
+
+private class SamplePlacesProvider : PreviewParameterProvider<List<PlaceItem>> {
+    override val values = sequenceOf(
+        listOf(
+            PlaceItem(id = JsonPrimitive("1"), name = "Berlin", country = "Germany"),
+            PlaceItem(id = JsonPrimitive("2"), name = "Lisbon", country = "Portugal")
+        ),
+        emptyList()
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun PositionSelectionSectionPreview(
+    @PreviewParameter(SamplePlacesProvider::class) placeSearchResults: List<PlaceItem>
+) {
+    PixlitTheme {
+        PositionSelectionSection(
+            selectedPlace = null,
+            customLocationName = null,
+            isExifAutoDetected = false,
+            isExifMissing = false,
+            placeSearchQuery = "Ber",
+            placeSearchResults = placeSearchResults,
+            isSearchingPlaces = false,
+            onQueryChanged = {},
+            onSelectPlace = {},
+            onSetCustomLocation = {},
+            onClearLocation = {},
+            modifier = Modifier.padding(16.dp)
+        )
     }
 }

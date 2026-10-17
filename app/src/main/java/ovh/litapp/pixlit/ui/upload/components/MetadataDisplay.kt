@@ -110,3 +110,19 @@ fun MetadataDisplayResizedPreview() {
         )
     }
 }
+
+@Preview(showBackground = true)
+@Composable
+fun MetadataDisplayEmptyPreview() {
+    PixlitTheme {
+        MetadataDisplay(
+            currentPage = 0,
+            totalImages = 0,
+            originalMetadata = null,
+            resizedMetadata = null,
+            isCalculatingResized = false,
+            resizeTo8Mb = false,
+            modifier = Modifier.padding(16.dp)
+        )
+    }
+}

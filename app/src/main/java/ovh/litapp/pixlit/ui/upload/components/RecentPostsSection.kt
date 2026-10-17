@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
@@ -28,9 +29,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.google.gson.JsonPrimitive
+import ovh.litapp.pixlit.R
 import ovh.litapp.pixlit.data.api.StatusItem
+import ovh.litapp.pixlit.data.api.TagItem
+import ovh.litapp.pixlit.ui.theme.PixlitTheme
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -47,8 +56,8 @@ fun RecentPostsSection(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Your latest posts", style = MaterialTheme.typography.titleLarge)
-                Text("${statuses.size} posts loaded", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.recent_latest_posts), style = MaterialTheme.typography.titleLarge)
+                Text(stringResource(R.string.recent_loaded_count, statuses.size), style = MaterialTheme.typography.bodyMedium)
             }
         }
         itemsIndexed(statuses, key = { index, status -> status.getIdString() ?: "post-$index" }) { _, status ->
@@ -61,7 +70,7 @@ fun RecentPostsSection(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (isLoadingMore) CircularProgressIndicator(Modifier.size(20.dp))
-                else Text("Load 10 more posts")
+                else Text(stringResource(R.string.recent_load_more))
             }
         }
     }
@@ -86,7 +95,7 @@ private fun RecentPostCard(status: StatusItem, onCopyPost: (String) -> Unit) {
     val copyText = listOf(text, missingTags.joinToString(" ").takeIf { it.isNotBlank() })
         .filterNotNull().joinToString("\n\n")
 
-    Card(modifier = Modifier.fillMaxWidth().height(420.dp)) {
+    Card(modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp)) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (attachments.isNotEmpty()) {
                 val imagePagerState = rememberPagerState(pageCount = { attachments.size })
@@ -122,23 +131,53 @@ private fun RecentPostCard(status: StatusItem, onCopyPost: (String) -> Unit) {
             if (text.isNotBlank()) {
                 Text(
                     text = text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 3
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FavoriteBorder, contentDescription = "Likes")
+                    Icon(Icons.Default.FavoriteBorder, contentDescription = stringResource(R.string.recent_likes_cd))
                     Text(" ${status.favouritesCount}")
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Repeat, contentDescription = "Reposts")
+                    Icon(Icons.Default.Repeat, contentDescription = stringResource(R.string.recent_reposts_cd))
                     Text(" ${status.reblogsCount}")
                 }
             }
             Button(onClick = { onCopyPost(copyText) }, enabled = copyText.isNotBlank()) {
-                Text("Copy text and tags to new post")
+                Text(stringResource(R.string.recent_copy_post))
             }
         }
+    }
+}
+
+private class SampleStatusesProvider : PreviewParameterProvider<List<StatusItem>> {
+    override val values = sequenceOf(
+        listOf(
+            StatusItem(
+                id = JsonPrimitive("1"),
+                text = "A quiet morning by the lake #photography",
+                tags = listOf(TagItem("photography"), TagItem("lake")),
+                favouritesCount = 12,
+                reblogsCount = 3
+            )
+        ),
+        emptyList()
+    )
+}
+
+@Preview(showBackground = true)
+@Composable
+fun RecentPostsSectionPreview(
+    @PreviewParameter(SampleStatusesProvider::class) statuses: List<StatusItem>
+) {
+    PixlitTheme {
+        RecentPostsSection(
+            statuses = statuses,
+            onCopyPost = {},
+            onLoadMore = {},
+            isLoadingMore = false,
+            modifier = Modifier.padding(16.dp)
+        )
     }
 }

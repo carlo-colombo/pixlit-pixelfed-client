@@ -1,0 +1,81 @@
+<resources>
+    <!-- Login -->
+    <string name="login_title">Connect to Pixlit</string>
+    <string name="login_instance_url_label">Pixelfed Instance URL</string>
+    <string name="login_advanced_show">Advanced: Enter Client ID &amp; Secret</string>
+    <string name="login_advanced_hide">Hide manual API credentials</string>
+    <string name="login_client_id_label">Client ID (Optional)</string>
+    <string name="login_client_secret_label">Client Secret (Optional)</string>
+    <string name="login_missing_url_error">Please enter instance URL</string>
+    <string name="login_button">Log In with Pixlit</string>
+
+    <!-- Accessibility state descriptions -->
+    <string name="a11y_state_expanded">Expanded</string>
+    <string name="a11y_state_collapsed">Collapsed</string>
+
+    <!-- Upload -->
+    <string name="upload_header_title">Upload to Pixlit</string>
+    <string name="tab_upload">Upload</string>
+    <string name="tab_social">Social</string>
+    <string name="tab_recent">Recent</string>
+    <string name="tab_debug">Debug</string>
+    <string name="tab_settings">Settings</string>
+
+    <!-- Session -->
+    <string name="action_logout">Logout</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_undo">Undo</string>
+    <string name="logout_confirm_title">Log out?</string>
+    <string name="logout_confirm_message">You&apos;ll need to sign in again.</string>
+    <string name="logout_confirm_confirm">Log out</string>
+
+    <!-- Photo selection -->
+    <string name="upload_shift_left">Shift Left</string>
+    <string name="upload_shift_right">Shift Right</string>
+    <string name="upload_remove">Remove</string>
+    <string name="upload_remove_photo_cd">Remove Photo</string>
+    <string name="upload_resize_label">Resize down to 8MB</string>
+    <string name="upload_removed_snackbar">Photo removed</string>
+    <string name="upload_select_photos">Select Photos from Gallery (up to %1$d)</string>
+    <string name="upload_add_more_photos">Add More Photos (%1$d/%2$d)</string>
+    <string name="upload_max_photos">Maximum Photos Reached (%1$d/%2$d)</string>
+    <string name="upload_photo">Upload Photo</string>
+    <plurals name="upload_photos">
+        <item quantity="one">Upload Photo</item>
+        <item quantity="other">Upload %1$d Photos</item>
+    </plurals>
+    <string name="upload_no_images">No images selected</string>
+    <string name="upload_selected_photo_cd">Selected Photo %1$d</string>
+    <string name="upload_order_preview">Upload Order Preview (%1$d/%2$d)</string>
+    <string name="upload_thumbnail_cd">Thumbnail %1$d</string>
+
+    <!-- Caption -->
+    <string name="upload_caption_label">Write a caption...</string>
+    <string name="upload_caption_search_tags">Search tags</string>
+    <string name="upload_no_matching_tags">No matching tags</string>
+    <string name="upload_counter_pf">pf: %1$d/%2$d</string>
+    <string name="upload_counter_bs">bs: %1$d/%2$d</string>
+
+    <!-- Top tags -->
+    <string name="tags_top">Top Tags</string>
+    <string name="tags_refresh_cd">Refresh tags</string>
+    <string name="tags_none">No tags found</string>
+
+    <!-- Recent posts -->
+    <string name="recent_latest_posts">Your latest posts</string>
+    <string name="recent_loaded_count">%1$d posts loaded</string>
+    <string name="recent_load_more">Load 10 more posts</string>
+    <string name="recent_copy_post">Copy text and tags to new post</string>
+    <string name="recent_likes_cd">Likes</string>
+    <string name="recent_reposts_cd">Reposts</string>
+
+    <!-- Notifications -->
+    <string name="notifications_disabled_title">Notifications disabled</string>
+    <string name="notifications_disabled_message">Reminders will not fire until you enable notifications.</string>
+    <string name="notifications_enable">Enable notifications</string>
+    <string name="notifications_open_settings">Open system settings</string>
+    <string name="notifications_rationale_title">Turn on notifications?</string>
+    <string name="notifications_rationale_message">Pixlit needs notification permission to send BlueSkyArtShow reminders.</string>
+    <string name="action_allow">Allow</string>
+    <string name="action_not_now">Not now</string>
+</resources>

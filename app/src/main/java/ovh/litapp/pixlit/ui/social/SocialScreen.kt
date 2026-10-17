@@ -16,8 +16,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import ovh.litapp.pixlit.data.repository.ChallengeTag
+import ovh.litapp.pixlit.data.repository.WeeklyChallenge
+import ovh.litapp.pixlit.ui.theme.PixlitTheme
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
@@ -31,6 +35,25 @@ fun SocialScreen(
     val challenge by viewModel.challenge.collectAsState()
     val loading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
+    SocialContent(
+        challenge = challenge,
+        loading = loading,
+        error = error,
+        onRefresh = viewModel::refresh,
+        onTagClick = onTagClick,
+        modifier = modifier
+    )
+}
+
+@Composable
+fun SocialContent(
+    challenge: WeeklyChallenge?,
+    loading: Boolean,
+    error: String?,
+    onRefresh: () -> Unit,
+    onTagClick: (List<String>) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val uriHandler = LocalUriHandler.current
 
     val currentDay = remember {
@@ -158,10 +181,45 @@ fun SocialScreen(
 
         if (!loading) {
             item {
-                OutlinedButton(onClick = viewModel::refresh) {
+                OutlinedButton(onClick = onRefresh) {
                     Text("Refresh")
                 }
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun SocialScreenPreview() {
+    PixlitTheme {
+        SocialContent(
+            challenge = WeeklyChallenge(
+                dateRange = "Jan 1 - Jan 7",
+                tagsByDay = linkedMapOf(
+                    "Monday" to listOf(ChallengeTag("minimal", "keep it simple")),
+                    "Tuesday" to listOf(ChallengeTag("texture"))
+                ),
+                postUrl = "https://bsky.app/profile/example/post/1"
+            ),
+            loading = false,
+            error = null,
+            onRefresh = {},
+            onTagClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun SocialScreenLoadingPreview() {
+    PixlitTheme {
+        SocialContent(
+            challenge = null,
+            loading = true,
+            error = null,
+            onRefresh = {},
+            onTagClick = {}
+        )
     }
 }

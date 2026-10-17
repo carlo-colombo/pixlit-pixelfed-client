@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -55,6 +57,8 @@ class MainViewModelTest {
         every { uri.getQueryParameter("code") } returns "test_code"
         every { uri.getQueryParameter("error") } returns null
         every { uri.getQueryParameter("error_description") } returns null
+        val state = viewModel.createOAuthState()
+        every { uri.getQueryParameter("state") } returns state
         
         coEvery { repository.exchangeCodeForToken(any(), any()) } returns Result.success("token")
         
@@ -63,6 +67,27 @@ class MainViewModelTest {
         advanceUntilIdle()
         
         assertTrue(viewModel.isLoggedIn.value)
+    }
+
+    @Test
+    fun `handleIntent with mismatched state reports an error and does not exchange the code`() = runTest {
+        val intent = mockk<Intent>(relaxed = true)
+        val uri = mockk<Uri>()
+        every { intent.data } returns uri
+        every { uri.scheme } returns "pixelfed-app"
+        every { uri.host } returns "oauth"
+        every { uri.getQueryParameter("code") } returns "test_code"
+        every { uri.getQueryParameter("error") } returns null
+        every { uri.getQueryParameter("error_description") } returns null
+        every { uri.getQueryParameter("state") } returns "attacker-supplied-state"
+
+        viewModel.createOAuthState()
+        viewModel.handleIntent(intent)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.isLoggedIn.value)
+        assertNotNull(viewModel.authError.value)
+        verify(exactly = 0) { repository.exchangeCodeForToken(any(), any()) }
     }
 
     @Test
