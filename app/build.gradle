@@ -79,16 +79,16 @@ android {
     defaultConfig {
         applicationId "ovh.litapp.pixlit"
         minSdk 34
-        targetSdk 35
+        // Matches compileSdk: the JVM tests pin their own SDK via
+        // app/src/test/resources/robolectric.properties, so this bump cannot force Robolectric
+        // onto an SDK runtime it does not ship.
+        targetSdk 37
         // CI passes -Pandroid.versionName/-Pandroid.versionCode derived from the release tag.
         // The fallbacks keep local and PR builds on the historical 1.0.0 / 1 values.
         versionCode = (findProperty("android.versionCode") ?: "1").toString().toInteger()
         versionName = (findProperty("android.versionName") ?: "1.0.0").toString()
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary = true
-        }
 
         manifestPlaceholders = [appAuthRedirectScheme: "pixlit", appLabel: "Pixlit"]
 
@@ -187,8 +187,26 @@ androidComponents {
     }
 }
 
-// This module compiles Kotlin through AGP's built-in Kotlin support (no kotlin-android plugin),
-// so the Kotlin compile tasks are configured directly; compileOptions above only pins the Java side.
+// REL-12: point Room's annotation processor at a checked-in schema directory, so the data lane can
+// set `exportSchema = true` in AppDatabase and commit the generated version JSON for future
+// migrations to diff and test against. Nothing is written while exportSchema stays false.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// BUILD-11: emit Compose compiler metrics and the skippability report under the module build
+// directory. Both are gitignored build output, so this changes nothing in the packaged APK. No
+// stability configuration file is wired: the generated report lists no non-skippable composable and
+// no app-owned holder type whose stability promise would change that, so there is nothing to
+// declare. Re-check app/build/compose-reports when a new state holder is introduced.
+composeCompiler {
+    metricsDestination.set(layout.buildDirectory.dir("compose-metrics"))
+    reportsDestination.set(layout.buildDirectory.dir("compose-reports"))
+}
+
+// This module compiles Kotlin through AGP's built-in Kotlin support (the Kotlin Android plugin is
+// not applied), so the Kotlin compile tasks are configured directly; compileOptions above only pins
+// the Java side.
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile).configureEach {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
@@ -209,7 +227,8 @@ dependencies {
     implementation libs.androidx.ui.graphics
     implementation libs.androidx.ui.tooling.preview
     implementation libs.androidx.material3
-    implementation libs.androidx.material.icons.core
+    // Kept for `Icons.Default.Repeat` (RecentPostsSection); the core icons artifact it needs comes
+    // in transitively, so there is no separate declaration for it.
     implementation libs.androidx.material.icons.extended
     implementation libs.androidx.browser
     implementation libs.androidx.exifinterface
@@ -241,6 +260,9 @@ dependencies {
     implementation libs.room.ktx
     ksp libs.room.compiler
 
+    // DataStore preferences, used by the data lane for the tag-search and reminder stores.
+    implementation libs.androidx.datastore.preferences
+
     testImplementation libs.junit
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.junit
@@ -249,11 +271,9 @@ dependencies {
     testImplementation libs.turbine
     testImplementation libs.mockk
     testImplementation libs.androidx.work.testing
+    // TEST-01/TEST-03 need a fake HTTP server and an in-memory Room test harness.
+    testImplementation libs.room.testing
+    testImplementation libs.okhttp.mockwebserver
     add("robolectricAndroidAll", libs.android.all.instrumented)
-    androidTestImplementation libs.androidx.junit
-    androidTestImplementation libs.androidx.espresso.core
-    androidTestImplementation platform(libs.androidx.compose.bom)
-    androidTestImplementation libs.androidx.ui.test.junit4
     debugImplementation libs.androidx.ui.tooling
-    debugImplementation libs.androidx.ui.test.manifest
 }
