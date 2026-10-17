@@ -53,6 +53,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.launch
 import ovh.litapp.pixlit.BuildConfig
+import ovh.litapp.pixlit.R
 import ovh.litapp.pixlit.data.api.CollectionItem
 import ovh.litapp.pixlit.data.api.PlaceItem
 import ovh.litapp.pixlit.data.api.StatusItem
@@ -277,6 +278,11 @@ fun UploadContent(
     // The Debug tab is flanked by Upload/Social/Recent (0-2) and Settings, so omitting it shifts
     // Settings from index 4 to 3. The dispatch below keys off BuildConfig.DEBUG_TOOLS as well as the
     // index, so prod's index 3 resolves to Settings and R8 can delete the dead Debug branch.
+    val tabUpload = stringResource(R.string.tab_upload)
+    val tabSocial = stringResource(R.string.tab_social)
+    val tabRecent = stringResource(R.string.tab_recent)
+    val tabDebug = stringResource(R.string.tab_debug)
+    val tabSettings = stringResource(R.string.tab_settings)
     val tabs = buildList {
         add(tabUpload)
         add(tabSocial)
@@ -294,11 +300,6 @@ fun UploadContent(
     var showLogoutConfirm by remember { mutableStateOf(false) }
     val removedMessage = stringResource(R.string.upload_removed_snackbar)
     val undoLabel = stringResource(R.string.action_undo)
-    val tabUpload = stringResource(R.string.tab_upload)
-    val tabSocial = stringResource(R.string.tab_social)
-    val tabRecent = stringResource(R.string.tab_recent)
-    val tabDebug = stringResource(R.string.tab_debug)
-    val tabSettings = stringResource(R.string.tab_settings)
     // Tracks the tab the previously-rendered composition showed, so restoring a saved tab does not
     // re-fire the Debug tab's refresh side effect.
     var lastSelectedTab by rememberSaveable { mutableStateOf(selectedTab) }
@@ -551,19 +552,10 @@ fun UploadContent(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    var captionLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
-                    val caretOffset = captionState.selection.end
-                    // Anchor the hashtag popup to the measured caret instead of an assumed glyph
-                    // width; before the first layout it falls back to the field's leading edge.
-                    val cursorX = remember(captionLayout, caretOffset) {
-                        val layout = captionLayout
-                        if (layout == null) {
-                            0
-                        } else {
-                            val offset = caretOffset.coerceIn(0, layout.layoutInput.text.length)
-                            layout.getHorizontalPosition(offset, usePrimaryDirection = true).toInt()
-                        }
-                    }
+                    // The pinned Material3 `OutlinedTextField(TextFieldValue, …)` overload has no
+                    // `onTextLayout`, so the caret cannot be measured here; anchor the hashtag popup
+                    // to the field's leading edge (the pre-measurement fallback).
+                    val cursorX = 0
 
                     Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedTextField(
@@ -584,8 +576,7 @@ fun UploadContent(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 120.dp),
-                            maxLines = 10,
-                            onTextLayout = { captionLayout = it }
+                            maxLines = 10
                         )
 
                         if (showTagPopup && hashtagContext != null) {

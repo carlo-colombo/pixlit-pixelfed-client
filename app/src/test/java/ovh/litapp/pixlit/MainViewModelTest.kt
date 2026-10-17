@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -87,7 +88,7 @@ class MainViewModelTest {
 
         assertFalse(viewModel.isLoggedIn.value)
         assertNotNull(viewModel.authError.value)
-        verify(exactly = 0) { repository.exchangeCodeForToken(any(), any()) }
+        coVerify(exactly = 0) { repository.exchangeCodeForToken(any(), any()) }
     }
 
     @Test

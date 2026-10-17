@@ -26,7 +26,7 @@
     <string name="action_cancel">Cancel</string>
     <string name="action_undo">Undo</string>
     <string name="logout_confirm_title">Log out?</string>
-    <string name="logout_confirm_message">You&apos;ll need to sign in again.</string>
+    <string name="logout_confirm_message">You\'ll need to sign in again.</string>
     <string name="logout_confirm_confirm">Log out</string>
 
     <!-- Photo selection -->
