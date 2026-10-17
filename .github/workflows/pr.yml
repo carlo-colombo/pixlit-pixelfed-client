@@ -87,21 +87,21 @@ jobs:
 
       - name: Assemble, test and lint
         # One Gradle invocation keeps a single configuration/daemon warm and
-        # lets the tasks run in parallel. `ciDev` is this repo's dev flavor;
+        # lets the tasks run in parallel. `dev` is this repo's dev flavor;
         # AGP only creates unit-test tasks for the tested build type (`debug`).
         run: |
           ./gradlew \
             -Pandroid.versionName="${{ steps.build_config.outputs.tag_version }}" \
             -Pandroid.versionCode="${{ steps.build_config.outputs.version_code }}" \
-            :app:assembleCiDevDebug \
-            :app:testCiDevDebugUnitTest \
-            :app:lintCiDevDebug \
+            :app:assembleDevDebug \
+            :app:testDevDebugUnitTest \
+            :app:lintDevDebug \
             --parallel
 
       - name: Prepare APK artifact
         run: |
           set -euo pipefail
-          cp app/build/outputs/apk/ciDev/debug/app-ci-dev-debug.apk "pixelfed-client-${{ steps.build_config.outputs.tag_version }}.apk"
+          cp app/build/outputs/apk/dev/debug/app-dev-debug.apk "pixelfed-client-${{ steps.build_config.outputs.tag_version }}.apk"
 
       - name: Generate APK checksum
         run: sha256sum "pixelfed-client-${{ steps.build_config.outputs.tag_version }}.apk" > "pixelfed-client-${{ steps.build_config.outputs.tag_version }}.apk.sha256"

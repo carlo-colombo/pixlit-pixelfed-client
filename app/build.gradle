@@ -90,7 +90,9 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
-        manifestPlaceholders = [appAuthRedirectScheme: "pixlit", appLabel: "Pixlit"]
+        // appLabel and appAuthRedirectScheme are set per flavor below so every
+        // installed variant declares its own label and OAuth scheme explicitly.
+        manifestPlaceholders = [appLabel: "Pixlit"]
 
         // Surfaced in Settings -> About so the app can state its own license and point at the
         // Corresponding Source for the exact build (GPLv3 section 6).
@@ -98,29 +100,26 @@ android {
         buildConfigField("String", "LICENSE_IDENTIFIER", "\"GPL-3.0-or-later\"")
     }
 
-    flavorDimensions = ["distribution", "env"]
+    // One dimension: dev and prod are the only installable variants. The dev
+    // .dev id suffix keeps a dev install alongside a prod one (BUILD-02).
+    flavorDimensions = ["env"]
     productFlavors {
-        local {
-            dimension "distribution"
-            applicationIdSuffix ".local"
-            manifestPlaceholders.appLabel = "Pixlit (Internal)"
-        }
-        ci {
-            dimension "distribution"
-        }
         dev {
             dimension "env"
             applicationIdSuffix ".dev"
             manifestPlaceholders.appLabel = "Pixlit Dev"
+            // The placeholder and app/src/dev/res/values/strings.xml `redirect_uri`
+            // must agree: OAuth registers the string resource while the manifest
+            // deep link matches the placeholder, so a drift breaks the callback.
             manifestPlaceholders.appAuthRedirectScheme = "pixlit-dev"
-            // Debug tooling (Debug tab, Simulate Art Show Notification) is dev-only. The env
-            // dimension is the single source of this flag; distribution flavors (local/ci) must
-            // not also set it or the higher-priority dimension would override the env value.
+            // Debug tooling (Debug tab, Simulate Art Show Notification) is dev-only.
             buildConfigField("boolean", "DEBUG_TOOLS", "true")
         }
         prod {
             dimension "env"
             manifestPlaceholders.appLabel = "Pixlit"
+            // Matches app/src/prod/res/values/strings.xml `redirect_uri`.
+            manifestPlaceholders.appAuthRedirectScheme = "pixlit"
             buildConfigField("boolean", "DEBUG_TOOLS", "false")
         }
     }
@@ -211,11 +210,6 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile).configureEach
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
-}
-
-// Keep the conventional test task usable while local builds default to dev.
-tasks.register("testDebugUnitTest") {
-    dependsOn("testLocalDevDebugUnitTest")
 }
 
 dependencies {

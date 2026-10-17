@@ -87,28 +87,28 @@ jobs:
           ./gradlew \
             -Pandroid.versionName="${{ steps.version.outputs.new_tag }}" \
             -Pandroid.versionCode="${{ steps.build_config.outputs.version_code }}" \
-            :app:assembleCiProdRelease
+            :app:assembleProdRelease
 
       - name: Stop the R8 daemon before validation
-        # `assembleCiProdRelease` above leaves a Gradle daemon that has just run R8; releasing it
+        # `assembleProdRelease` above leaves a Gradle daemon that has just run R8; releasing it
         # before the test+lint validation keeps the 7 GB runner's memory headroom. A native OOM in
         # this job's process-reaper thread once hung a release run.
         run: ./gradlew --stop
 
       - name: Validate prod variant before signing
-        # `assembleCiProdRelease` above already runs R8 minification, resource
-        # shrinking and lintVitalCiProdRelease, but nothing else exercises the
-        # ciProd flavor's unit tests or the release variant's full lint, so a
+        # `assembleProdRelease` above already runs R8 minification, resource
+        # shrinking and lintVitalProdRelease, but nothing else exercises the
+        # prod flavor's unit tests or the release variant's full lint, so a
         # release-only breakage would reach signing - and, before REL-01, the
         # tag push. AGP only creates unit-test tasks for the tested build type
-        # (`debug`), so there is no `:app:testCiProdReleaseUnitTest`; the tasks
+        # (`debug`), so there is no `:app:testProdReleaseUnitTest`; the tasks
         # that exist for this flavor/build type are the ones below.
         run: |
           ./gradlew \
             -Pandroid.versionName="${{ steps.version.outputs.new_tag }}" \
             -Pandroid.versionCode="${{ steps.build_config.outputs.version_code }}" \
-            :app:testCiProdDebugUnitTest \
-            :app:lintCiProdRelease
+            :app:testProdDebugUnitTest \
+            :app:lintProdRelease
 
       - name: Bump version and push tag
         # Runs only once the prod variant has validated, so a validation failure
@@ -179,7 +179,7 @@ jobs:
         # SHA-pinned but unmaintained and emitted the deprecated `::set-output`
         # command on every release run:
         #   1. decode the SIGNING_KEY secret into a keystore file
-        #   2. zipalign the unsigned APK to app-ci-prod-release-unsigned-aligned.apk
+        #   2. zipalign the unsigned APK to app-prod-release-unsigned-aligned.apk
         #   3. `apksigner sign --ks <keystore> --out ...-signed.apk`
         #   4. `apksigner verify` the result
         # The keystore is kept out of the workspace and readable by the runner
@@ -194,10 +194,10 @@ jobs:
           BUILD_TOOLS_VERSION: ${{ steps.build_tools.outputs.version }}
         run: |
           set -euo pipefail
-          release_dir="app/build/outputs/apk/ciProd/release"
-          unsigned_apk="$release_dir/app-ci-prod-release-unsigned.apk"
-          aligned_apk="$release_dir/app-ci-prod-release-unsigned-aligned.apk"
-          signed_apk="$release_dir/app-ci-prod-release-unsigned-signed.apk"
+          release_dir="app/build/outputs/apk/prod/release"
+          unsigned_apk="$release_dir/app-prod-release-unsigned.apk"
+          aligned_apk="$release_dir/app-prod-release-unsigned-aligned.apk"
+          signed_apk="$release_dir/app-prod-release-unsigned-signed.apk"
           if [ ! -f "$unsigned_apk" ]; then
             echo "::error::No unsigned release APK at $unsigned_apk"
             exit 1
