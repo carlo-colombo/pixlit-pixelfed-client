@@ -20,6 +20,7 @@ import ovh.litapp.pixlit.data.session.SessionRepository
 import ovh.litapp.pixlit.data.status.StatusCache
 import ovh.litapp.pixlit.data.status.StatusRemoteSource
 import ovh.litapp.pixlit.data.tags.TagAggregator
+import ovh.litapp.pixlit.data.tags.TagSearchCache
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -27,14 +28,10 @@ data class TagCount(val name: String, val count: Int)
 
 data class CacheSummaryItem(val name: String, val entityCount: Int)
 
-private data class CachedTagSearch(
-    val names: List<String>
-)
-
 /**
- * The facade the ViewModels inject. It owns no behaviour beyond the bundled static data and the
- * SharedPreferences tag-search cache; OAuth (DATA-06 step 3), media upload (step 4), status
- * network/cache (step 5) and the per-instance API (step 6) live in their own seams under `data/`.
+ * The facade the ViewModels inject. It owns no behaviour beyond the bundled static data; OAuth
+ * (DATA-06 step 3), media upload (step 4), status network/cache (step 5) and the per-instance API
+ * (step 6) live in their own seams under `data/`.
  */
 @Singleton
 class PixelfedRepository @Inject constructor(
@@ -45,7 +42,8 @@ class PixelfedRepository @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val mediaUploader: MediaUploader,
     private val statusCache: StatusCache,
-    private val statusRemoteSource: StatusRemoteSource
+    private val statusRemoteSource: StatusRemoteSource,
+    private val tagSearchCache: TagSearchCache
 ) {
 
     suspend fun registerApp(instanceUrl: String, redirectUri: String): Result<Pair<String, String>> =
@@ -239,18 +237,7 @@ class PixelfedRepository @Inject constructor(
         if (normalizedQuery.isBlank()) return@withContext Result.success(emptyList())
 
         val instanceUrl = tokenManager.instanceUrl
-        val cacheKey = "${instanceUrl.orEmpty()}|$normalizedQuery"
-        val cacheType = object : TypeToken<MutableMap<String, CachedTagSearch>>() {}.type
-        val cache = runCatching {
-            gson.fromJson<MutableMap<String, CachedTagSearch>>(
-                tokenManager.tagSearchCacheJson,
-                cacheType
-            ) ?: mutableMapOf()
-        }.getOrElse { mutableMapOf() }
-        val cached = cache[cacheKey]
-        if (cached != null) {
-            return@withContext Result.success(cached.names)
-        }
+        tagSearchCache.get(instanceUrl, normalizedQuery)?.let { return@withContext Result.success(it) }
 
         if (instanceUrl.isNullOrBlank()) return@withContext Result.failure(Exception("Not logged in"))
 
@@ -267,8 +254,7 @@ class PixelfedRepository @Inject constructor(
             val names = response.body()?.hashtags.orEmpty()
                 .mapNotNull { it.name?.trim()?.removePrefix("#")?.takeIf(String::isNotBlank) }
                 .distinctBy(String::lowercase)
-            cache[cacheKey] = CachedTagSearch(names)
-            tokenManager.tagSearchCacheJson = gson.toJson(cache, cacheType)
+            tagSearchCache.put(instanceUrl, normalizedQuery, names)
             Result.success(names)
         } catch (e: Exception) {
             Log.e(TAG, "searchTags failed", e)
@@ -277,10 +263,7 @@ class PixelfedRepository @Inject constructor(
     }
 
     suspend fun getCacheSummary(): List<CacheSummaryItem> = withContext(Dispatchers.IO) {
-        val tagSearchCount = runCatching {
-            val type = object : TypeToken<Map<String, CachedTagSearch>>() {}.type
-            gson.fromJson<Map<String, CachedTagSearch>>(tokenManager.tagSearchCacheJson, type)?.size ?: 0
-        }.getOrDefault(0)
+        val tagSearchCount = runCatching { tagSearchCache.count() }.getOrDefault(0)
         val statusCount = runCatching {
             tokenManager.instanceUrl?.let { statusCache.countStatuses(it) } ?: 0
         }.getOrDefault(0)
@@ -289,6 +272,22 @@ class PixelfedRepository @Inject constructor(
             CacheSummaryItem("Remote tag searches", tagSearchCount),
             CacheSummaryItem("Cached statuses", statusCount)
         )
+    }
+
+    /**
+     * Purges the current instance's cached statuses and the tag-search cache. Exposed for the
+     * logout path; the caller (`MainViewModel.logout()`, outside the data lane) must invoke it
+     * before `tokenManager.clear()`, since the instance URL is read from the token store here, and
+     * must launch it off the main thread because it is `suspend`.
+     */
+    suspend fun clearCache() = withContext(Dispatchers.IO) {
+        val instanceUrl = tokenManager.instanceUrl
+        if (!instanceUrl.isNullOrBlank()) {
+            runCatching { statusCache.clearStatuses(instanceUrl) }
+                .onFailure { Log.e(TAG, "clearCache: failed to purge cached statuses", it) }
+        }
+        runCatching { tagSearchCache.clear() }
+            .onFailure { Log.e(TAG, "clearCache: failed to purge the tag-search cache", it) }
     }
 
     /** Room first; the bundled asset is only a fallback, applied by [getUserTopTagsAndPosts]. */

@@ -16,6 +16,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import java.io.IOException
 import java.time.*
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -36,7 +37,6 @@ class ReminderSchedulerTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        context.getSharedPreferences("pixlit_reminders", Context.MODE_PRIVATE).edit().clear().commit()
         preferences = ReminderPreferences(context)
     }
 
@@ -64,7 +64,7 @@ class ReminderSchedulerTest {
     @Test fun `cancel resolves the pending intent created by schedule`() {
         val scheduler = ReminderScheduler(context, preferences)
 
-        scheduler.scheduleAll()
+        runBlocking { scheduler.scheduleAllNow() }
         val alarms = Shadows.shadowOf(context.getSystemService(AlarmManager::class.java))
         assertEquals(2, alarms.scheduledAlarms.size)
 
@@ -85,7 +85,7 @@ class ReminderSchedulerTest {
         assertEquals(fridayIntent, resolved)
 
         // A matching cancel removes both alarms before they are re-added; a mismatch would leave four.
-        scheduler.rescheduleAll()
+        runBlocking { scheduler.rescheduleAllNow() }
         assertEquals(2, alarms.scheduledAlarms.size)
     }
 
@@ -95,26 +95,15 @@ class ReminderSchedulerTest {
     }
 
     @Test fun `out of range stored times are clamped on read`() {
-        context.getSharedPreferences("pixlit_reminders", Context.MODE_PRIVATE).edit()
-            .putInt("friday_hour", 99).putInt("friday_minute", 99)
-            .putInt("saturday_hour", -1).putInt("saturday_minute", -1)
-            .commit()
-
-        assertEquals(LocalTime.of(23, 59), preferences.friday)
-        assertEquals(LocalTime.of(0, 0), preferences.saturday)
+        assertEquals(LocalTime.of(23, 59), clampTime(99, 99))
+        assertEquals(LocalTime.of(0, 0), clampTime(-1, -1))
+        assertEquals(LocalTime.of(6, 30), clampTime(6, 30))
     }
 
-    @Test fun `scheduleAll tolerates out of range stored times`() {
-        context.getSharedPreferences("pixlit_reminders", Context.MODE_PRIVATE).edit()
-            .putInt("friday_hour", 99).putInt("friday_minute", 99)
-            .putInt("saturday_hour", 99).putInt("saturday_minute", 99)
-            .commit()
-
+    @Test fun `scheduleAll schedules both reminders from the stored times`() = runBlocking {
         val scheduler = ReminderScheduler(context, preferences)
 
-        // A corrupt stored time must not escape as DateTimeException, and both reminders must still
-        // be scheduled from the clamped values.
-        scheduler.scheduleAll()
+        scheduler.scheduleAllNow()
         val alarms = Shadows.shadowOf(context.getSystemService(AlarmManager::class.java))
         assertEquals(2, alarms.scheduledAlarms.size)
     }

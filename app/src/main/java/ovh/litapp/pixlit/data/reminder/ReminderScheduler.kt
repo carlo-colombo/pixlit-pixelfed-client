@@ -6,6 +6,10 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.time.*
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,19 +19,33 @@ class ReminderScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
     private val preferences: ReminderPreferences
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     fun scheduleAll() {
-        // Best-effort: a stale or corrupt stored time must not crash the caller. Each day is guarded
-        // separately so a bad value for one cannot cancel the other reminder.
-        runCatching { schedule(DayOfWeek.FRIDAY, preferences.friday) }
-            .onFailure { Log.w(TAG, "Failed to schedule the Friday art-show reminder", it) }
-        runCatching { schedule(DayOfWeek.SATURDAY, preferences.saturday) }
-            .onFailure { Log.w(TAG, "Failed to schedule the Saturday art-show reminder", it) }
+        scope.launch { scheduleAllNow() }
     }
 
     fun rescheduleAll() {
+        scope.launch { rescheduleAllNow() }
+    }
+
+    /**
+     * Reads the authoritative stored times (suspending) and (re)schedules both reminders. Best-effort:
+     * a stale or corrupt stored time must not crash the caller. Each day is guarded separately so a
+     * bad value for one cannot cancel the other reminder.
+     */
+    suspend fun scheduleAllNow() {
+        val times = preferences.current()
+        runCatching { schedule(DayOfWeek.FRIDAY, times.friday) }
+            .onFailure { Log.w(TAG, "Failed to schedule the Friday art-show reminder", it) }
+        runCatching { schedule(DayOfWeek.SATURDAY, times.saturday) }
+            .onFailure { Log.w(TAG, "Failed to schedule the Saturday art-show reminder", it) }
+    }
+
+    suspend fun rescheduleAllNow() {
         cancel(DayOfWeek.FRIDAY)
         cancel(DayOfWeek.SATURDAY)
-        scheduleAll()
+        scheduleAllNow()
     }
 
     private fun schedule(day: DayOfWeek, time: LocalTime) {

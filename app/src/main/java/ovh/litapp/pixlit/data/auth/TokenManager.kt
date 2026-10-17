@@ -24,14 +24,106 @@ sealed interface SessionState {
     data object LoggedOut : SessionState
 }
 
+/** Snapshot of the stored OAuth credentials, mirroring the encrypted preference file. */
+data class StoredCredentials(
+    val instanceUrl: String? = null,
+    val accessToken: String? = null,
+    val clientId: String? = null,
+    val clientSecret: String? = null
+)
+
+/**
+ * Owns the stored OAuth session (SEC-02, DATA-09).
+ *
+ * The credential file stays the Keystore-backed [EncryptedSharedPreferences] landed by SEC-02 — the
+ * bearer token must not be written as plaintext — but every write now uses `apply()` instead of the
+ * blocking `commit()`, so logout and the registration/token setters never touch the disk on the
+ * caller's thread. The values are mirrored into [credentials] (and [sessionState]) so login/logout
+ * is observable without polling.
+ *
+ * The synchronous getters and the constructor's initial read are kept because the public surface is
+ * read synchronously from several seams — [AuthInterceptor] runs on an OkHttp thread, and
+ * `MainViewModel` reads `isLoggedIn()` at construction. Priming that first read asynchronously would
+ * flash the login screen on every cold start for a logged-in user, so it is intentionally left as
+ * the one synchronous read; `apply()`'s background flush is what removes the write cost.
+ */
 @Singleton
 class TokenManager @Inject constructor(@ApplicationContext context: Context) {
     private val prefs: SharedPreferences = createPreferences(context)
+
+    private val _credentials = MutableStateFlow(
+        StoredCredentials(
+            instanceUrl = prefs.getString(KEY_INSTANCE_URL, null),
+            accessToken = prefs.getString(KEY_ACCESS_TOKEN, null),
+            clientId = prefs.getString(KEY_CLIENT_ID, null),
+            clientSecret = prefs.getString(KEY_CLIENT_SECRET, null)
+        )
+    )
+    val credentials: StateFlow<StoredCredentials> = _credentials.asStateFlow()
 
     private val _sessionState = MutableStateFlow(
         if (hasStoredCredentials()) SessionState.Authenticated else SessionState.LoggedOut
     )
     val sessionState: StateFlow<SessionState> = _sessionState.asStateFlow()
+
+    var instanceUrl: String?
+        get() = _credentials.value.instanceUrl
+        set(value) {
+            _credentials.value = _credentials.value.copy(instanceUrl = value)
+            prefs.edit().putString(KEY_INSTANCE_URL, value).apply()
+        }
+
+    var accessToken: String?
+        get() = _credentials.value.accessToken
+        set(value) {
+            _credentials.value = _credentials.value.copy(accessToken = value)
+            prefs.edit().putString(KEY_ACCESS_TOKEN, value).apply()
+            refreshSessionState()
+        }
+
+    var clientId: String?
+        get() = _credentials.value.clientId
+        set(value) {
+            _credentials.value = _credentials.value.copy(clientId = value)
+            prefs.edit().putString(KEY_CLIENT_ID, value).apply()
+        }
+
+    var clientSecret: String?
+        get() = _credentials.value.clientSecret
+        set(value) {
+            _credentials.value = _credentials.value.copy(clientSecret = value)
+            prefs.edit().putString(KEY_CLIENT_SECRET, value).apply()
+        }
+
+    fun isLoggedIn(): Boolean {
+        return _sessionState.value != SessionState.Expired && hasStoredCredentials()
+    }
+
+    /** Called by [AuthInterceptor] when the server rejects the stored token with HTTP 401. */
+    fun onUnauthorized() {
+        if (_sessionState.value != SessionState.Expired) {
+            _sessionState.value = SessionState.Expired
+        }
+    }
+
+    fun clear() {
+        _credentials.value = StoredCredentials()
+        prefs.edit().clear().apply()
+        _sessionState.value = SessionState.LoggedOut
+    }
+
+    private fun refreshSessionState() {
+        // Matches the previous setter: storing a fresh token re-authenticates even after a 401.
+        _sessionState.value = if (hasStoredCredentials()) {
+            SessionState.Authenticated
+        } else {
+            SessionState.LoggedOut
+        }
+    }
+
+    private fun hasStoredCredentials(): Boolean =
+        !_credentials.value.accessToken.isNullOrBlank() &&
+            !_credentials.value.instanceUrl.isNullOrBlank()
 
     companion object {
         private const val TAG = "TokenManager"
@@ -41,7 +133,6 @@ class TokenManager @Inject constructor(@ApplicationContext context: Context) {
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_CLIENT_ID = "client_id"
         private const val KEY_CLIENT_SECRET = "client_secret"
-        private const val KEY_TAG_SEARCH_CACHE = "tag_search_cache"
 
         /**
          * The bearer token and client secret must not sit in a plaintext preference file. The
@@ -66,59 +157,4 @@ class TokenManager @Inject constructor(@ApplicationContext context: Context) {
                 context.getSharedPreferences(FALLBACK_PREFS_FILE, Context.MODE_PRIVATE)
             }
     }
-
-    var tagSearchCacheJson: String?
-        get() = prefs.getString(KEY_TAG_SEARCH_CACHE, null)
-        set(value) {
-            prefs.edit().putString(KEY_TAG_SEARCH_CACHE, value).commit()
-        }
-
-    var instanceUrl: String?
-        get() = prefs.getString(KEY_INSTANCE_URL, null)
-        set(value) {
-            prefs.edit().putString(KEY_INSTANCE_URL, value).commit()
-        }
-
-    var accessToken: String?
-        get() = prefs.getString(KEY_ACCESS_TOKEN, null)
-        set(value) {
-            prefs.edit().putString(KEY_ACCESS_TOKEN, value).commit()
-            _sessionState.value = if (hasStoredCredentials()) {
-                SessionState.Authenticated
-            } else {
-                SessionState.LoggedOut
-            }
-        }
-
-    var clientId: String?
-        get() = prefs.getString(KEY_CLIENT_ID, null)
-        set(value) {
-            prefs.edit().putString(KEY_CLIENT_ID, value).commit()
-        }
-
-    var clientSecret: String?
-        get() = prefs.getString(KEY_CLIENT_SECRET, null)
-        set(value) {
-            prefs.edit().putString(KEY_CLIENT_SECRET, value).commit()
-        }
-
-    fun isLoggedIn(): Boolean {
-        return _sessionState.value != SessionState.Expired && hasStoredCredentials()
-    }
-
-    /** Called by [AuthInterceptor] when the server rejects the stored token with HTTP 401. */
-    fun onUnauthorized() {
-        if (_sessionState.value != SessionState.Expired) {
-            _sessionState.value = SessionState.Expired
-        }
-    }
-
-    fun clear() {
-        prefs.edit().clear().commit()
-        _sessionState.value = SessionState.LoggedOut
-    }
-
-    private fun hasStoredCredentials(): Boolean =
-        !prefs.getString(KEY_ACCESS_TOKEN, null).isNullOrBlank() &&
-            !prefs.getString(KEY_INSTANCE_URL, null).isNullOrBlank()
 }

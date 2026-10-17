@@ -9,6 +9,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import ovh.litapp.pixlit.data.db.AppDatabase
 import ovh.litapp.pixlit.data.db.StatusDao
+import ovh.litapp.pixlit.data.db.TagSearchCacheDao
 import javax.inject.Singleton
 
 @Module
@@ -23,13 +24,19 @@ object DatabaseModule {
             AppDatabase::class.java,
             "pixlit_db"
         )
-            // The statuses table is a disposable cache: on a schema change, recreate it instead of
-            // migrating rows. Room 2.8 only offers the argument form (`dropAllTables`), so the call
-            // is positional: true drops every table in this single-table database.
+            // Real 2 -> 3 migration for the index and the tag-search cache (DATA-11 / DATA-08). The
+            // statuses/tag tables are disposable caches, so an install older than version 2 is still
+            // recreated rather than migrated.
+            .addMigrations(AppDatabase.MIGRATION_2_3)
             .fallbackToDestructiveMigration(true)
             .build()
     }
 
     @Provides
+    @Singleton
     fun provideStatusDao(database: AppDatabase): StatusDao = database.statusDao()
+
+    @Provides
+    @Singleton
+    fun provideTagSearchCacheDao(database: AppDatabase): TagSearchCacheDao = database.tagSearchCacheDao()
 }

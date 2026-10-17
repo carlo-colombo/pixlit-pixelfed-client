@@ -36,7 +36,7 @@ class SessionRepository @Inject constructor(
             val response = api.registerApp(
                 clientName = "Pixlit Android Client",
                 redirectUris = redirectUri,
-                scopes = "read write follow",
+                scopes = "read write",
                 website = "https://pixelfed.org"
             )
             if (response.isSuccessful && response.body() != null) {
@@ -89,7 +89,7 @@ class SessionRepository @Inject constructor(
                 clientSecret = clientSecret,
                 redirectUri = redirectUri,
                 code = code,
-                scope = "read write follow"
+                scope = "read write"
             )
 
             if (response.isSuccessful && response.body() != null) {

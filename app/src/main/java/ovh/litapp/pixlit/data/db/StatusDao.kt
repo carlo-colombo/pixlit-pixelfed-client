@@ -15,4 +15,7 @@ interface StatusDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertStatuses(statuses: List<StatusEntity>)
+
+    @Query("DELETE FROM statuses WHERE instanceUrl = :instanceUrl")
+    suspend fun clearStatuses(instanceUrl: String)
 }
