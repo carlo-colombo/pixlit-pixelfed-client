@@ -45,6 +45,20 @@ class ImageUtilsTest {
         return file
     }
 
+    private fun createNoisyTestImageFile(width: Int, height: Int, filename: String = "noise.jpg"): File {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        // Fixed seed: deterministic pixels, so the file size is stable run to run.
+        val rnd = java.util.Random(42L)
+        val pixels = IntArray(width * height) { rnd.nextInt() or (0xFF shl 24) }
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+        val file = File(context.cacheDir, filename)
+        FileOutputStream(file).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
+        }
+        bitmap.recycle()
+        return file
+    }
+
     @Test
     fun testImageMetadataFormatting() {
         val metadataSmall = ImageMetadata(sizeBytes = 500, width = 100, height = 200)
@@ -99,8 +113,10 @@ class ImageUtilsTest {
 
     @Test
     fun testResizeImageDownToCustomSmallMaxBytes() {
-        // Create large image file
-        val file = createTestImageFile(2000, 2000, "large.jpg")
+        // Incompressible noise so the source is reliably larger than the 50 KB cap and the
+        // downscale branch runs. A solid/lined synthetic JPEG can compress below the cap, making
+        // the method early-return an unchanged copy and the width/height assertions fail.
+        val file = createNoisyTestImageFile(800, 800, "large.jpg")
         val uri = Uri.fromFile(file)
         val originalMetadata = ImageUtils.getImageMetadata(context, uri)!!
 
