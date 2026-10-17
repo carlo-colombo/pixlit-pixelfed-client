@@ -18,9 +18,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
+import ovh.litapp.pixlit.R
 import ovh.litapp.pixlit.ui.theme.PixlitTheme
 
 @Composable
@@ -38,7 +40,7 @@ fun OrderPreviewList(
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = "Upload Order Preview (${selectedImageUris.size}/$maxPhotos)",
+            text = stringResource(R.string.upload_order_preview, selectedImageUris.size, maxPhotos),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -62,7 +64,7 @@ fun OrderPreviewList(
                 ) {
                     Image(
                         painter = rememberAsyncImagePainter(uri),
-                        contentDescription = "Thumbnail ${index + 1}",
+                        contentDescription = stringResource(R.string.upload_thumbnail_cd, index + 1),
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )

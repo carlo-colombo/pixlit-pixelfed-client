@@ -19,9 +19,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
+import ovh.litapp.pixlit.R
 import ovh.litapp.pixlit.ui.theme.PixlitTheme
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -46,7 +48,7 @@ fun ImagePagerSection(
             ) { page ->
                 Image(
                     painter = rememberAsyncImagePainter(selectedImageUris[page]),
-                    contentDescription = "Selected Photo ${page + 1}",
+                    contentDescription = stringResource(R.string.upload_selected_photo_cd, page + 1),
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
                 )
@@ -75,7 +77,7 @@ fun ImagePagerSection(
             }
         } else {
             Text(
-                text = "No images selected",
+                text = stringResource(R.string.upload_no_images),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

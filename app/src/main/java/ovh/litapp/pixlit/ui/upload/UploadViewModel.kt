@@ -472,6 +472,21 @@ class UploadViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Re-inserts a single image at [index] (clamped), used to undo a removal at its original
+     * position. No-ops when the image is already selected or the 6-photo cap is reached, and
+     * emits one state update.
+     */
+    fun insertImageAt(index: Int, uri: Uri) {
+        val current = _selectedImageUris.value
+        if (uri in current || current.size >= MAX_PHOTOS) return
+        val insertAt = index.coerceIn(0, current.size)
+        val newList = current.toMutableList()
+        newList.add(insertAt, uri)
+        _selectedImageUris.value = newList
+        _currentPage.value = insertAt
+    }
+
     fun shiftLeft(index: Int) {
         val currentList = _selectedImageUris.value
         if (index > 0 && index < currentList.size) {

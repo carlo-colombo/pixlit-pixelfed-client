@@ -13,12 +13,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import dagger.hilt.android.AndroidEntryPoint
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
@@ -69,7 +73,15 @@ class MainActivity : ComponentActivity() {
             }
 
             PixlitTheme {
-                Column(modifier = Modifier.fillMaxSize()) {
+                // The root owns the top status-bar inset once, so DevBanner and the screens below
+                // no longer each pad it; screens own their own bottom/IME insets.
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .semantics { testTagsAsResourceId = true }
+                        .testTag("pixlit_root")
+                ) {
                     DevBanner()
                     Surface(
                         modifier = Modifier
@@ -105,7 +117,8 @@ class MainActivity : ComponentActivity() {
                                 context = activity,
                                 tokenManager = tokenManager,
                                 repository = repository,
-                                initialErrorMessage = authError
+                                initialErrorMessage = authError,
+                                onGenerateOAuthState = { viewModel.createOAuthState() }
                             )
                         }
                     }
