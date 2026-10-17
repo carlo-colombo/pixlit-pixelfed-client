@@ -39,8 +39,9 @@ class SessionRepository @Inject constructor(
                 scopes = "read write",
                 website = "https://pixelfed.org"
             )
-            if (response.isSuccessful && response.body() != null) {
-                val rawBodyString = response.body()!!.string()
+            val body = response.body()
+            if (response.isSuccessful && body != null) {
+                val rawBodyString = body.string()
                 val (clientId, clientSecret) = OAuthParsers.parseRegistrationResponseBody(rawBodyString)
                 if (!clientId.isNullOrBlank() && !clientSecret.isNullOrBlank()) {
                     tokenManager.clientId = clientId
@@ -69,7 +70,17 @@ class SessionRepository @Inject constructor(
         }
     }
 
-    suspend fun exchangeCodeForToken(code: String, redirectUri: String): Result<String> = withContext(Dispatchers.IO) {
+    /**
+     * Exchanges an authorization code for an access token.
+     *
+     * [codeVerifier] is the PKCE verifier whose S256 challenge was sent with the authorize request
+     * (SEC-03). It defaults to `null` so a code obtained without a challenge still exchanges.
+     */
+    suspend fun exchangeCodeForToken(
+        code: String,
+        redirectUri: String,
+        codeVerifier: String? = null
+    ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val instanceUrl = tokenManager.instanceUrl
             val clientId = tokenManager.clientId
@@ -89,11 +100,13 @@ class SessionRepository @Inject constructor(
                 clientSecret = clientSecret,
                 redirectUri = redirectUri,
                 code = code,
-                scope = "read write"
+                scope = "read write",
+                codeVerifier = codeVerifier
             )
 
-            if (response.isSuccessful && response.body() != null) {
-                val rawBodyString = response.body()!!.string()
+            val body = response.body()
+            if (response.isSuccessful && body != null) {
+                val rawBodyString = body.string()
                 val accessToken = OAuthParsers.parseTokenResponseBody(rawBodyString)
                 if (!accessToken.isNullOrBlank()) {
                     tokenManager.accessToken = accessToken

@@ -13,11 +13,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import ovh.litapp.pixlit.data.auth.Pkce
 import ovh.litapp.pixlit.data.auth.SessionState
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import java.util.UUID
 import javax.inject.Inject
+
+/**
+ * The authorize-URL parameters of one login attempt (SEC-03): the anti-CSRF [state] and the S256
+ * PKCE [codeChallenge]. The verifier that produced the challenge never leaves [MainViewModel]; it is
+ * held in memory and sent only with the token exchange.
+ */
+data class OAuthAuthorizeRequest(val state: String, val codeChallenge: String)
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
@@ -41,9 +49,10 @@ class MainViewModel @Inject constructor(
     private val _sharedImageUris = MutableStateFlow<List<Uri>>(emptyList())
     val sharedImageUris: StateFlow<List<Uri>> = _sharedImageUris.asStateFlow()
 
-    // Anti-CSRF `state` for the in-flight authorization redirect. In-memory only: the Custom Tab
-    // normally returns to the same process, and SEC-03 is scoped to verifying the redirect here.
+    // Anti-CSRF `state` and the PKCE verifier for the in-flight authorization redirect. In-memory
+    // only: the Custom Tab normally returns to the same process, and SEC-03 consumes both once.
     private var pendingOAuthState: String? = null
+    private var pendingCodeVerifier: String? = null
 
     init {
         viewModelScope.launch {
@@ -99,18 +108,21 @@ class MainViewModel @Inject constructor(
             if (code != null) {
                 // Verify the redirect belongs to an authorization request this app started before
                 // exchanging the code; an absent or mismatched state is treated as an auth error.
-                // TODO(SEC-03 PKCE): plumb code_verifier through SessionRepository/PixelfedApi.
+                // The PKCE verifier is read here (not from the redirect) so a captured code cannot
+                // be redeemed by an app that did not start this login.
                 val expectedState = pendingOAuthState
+                val codeVerifier = pendingCodeVerifier
                 val returnedState = uri.getQueryParameter("state")
-                if (expectedState == null || returnedState != expectedState) {
+                if (expectedState == null || codeVerifier == null || returnedState != expectedState) {
                     _authError.value = "OAuth state mismatch — sign-in was not completed"
                     return
                 }
                 pendingOAuthState = null
+                pendingCodeVerifier = null
                 _isAuthProcessing.value = true
                 _authError.value = null
                 viewModelScope.launch {
-                    val result = repository.exchangeCodeForToken(code, redirectUri)
+                    val result = repository.exchangeCodeForToken(code, redirectUri, codeVerifier)
                     _isAuthProcessing.value = false
                     result.fold(
                         onSuccess = {
@@ -130,13 +142,16 @@ class MainViewModel @Inject constructor(
     fun consumePrefill() { _prefillTheme.value = null }
 
     /**
-     * Generates a random anti-CSRF `state` and remembers it until the authorization redirect
-     * returns. [handleIntent] refuses to exchange a code whose `state` does not match.
+     * Generates a random anti-CSRF `state` and a PKCE verifier with its S256 challenge, keeping the
+     * verifier until [handleIntent] exchanges the returned code. [handleIntent] refuses to exchange
+     * a code whose `state` does not match.
      */
-    fun createOAuthState(): String {
+    fun createOAuthState(): OAuthAuthorizeRequest {
         val state = UUID.randomUUID().toString()
+        val verifier = Pkce.generateVerifier()
         pendingOAuthState = state
-        return state
+        pendingCodeVerifier = verifier
+        return OAuthAuthorizeRequest(state = state, codeChallenge = Pkce.s256Challenge(verifier))
     }
 
     fun consumeSharedImageUris() { _sharedImageUris.value = emptyList() }

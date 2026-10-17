@@ -48,7 +48,10 @@ interface PixelfedApi {
         @Field("redirect_uri") redirectUri: String,
         @Field("grant_type") grantType: String = "authorization_code",
         @Field("code") code: String,
-        @Field("scope") scope: String
+        @Field("scope") scope: String,
+        // PKCE (SEC-03). Retrofit omits a null field, so a server that answered the authorize
+        // request without a challenge still exchanges a code (the pre-PKCE flow).
+        @Field("code_verifier") codeVerifier: String? = null
     ): Response<okhttp3.ResponseBody>
 
     @Multipart
@@ -161,8 +164,13 @@ data class TagItem(
     @SerializedName("name") val name: String? = null
 )
 
+/**
+ * `api/v2/search?type=hashtags`. Gson instantiates via `Unsafe`, so a Kotlin default never runs:
+ * an omitted `hashtags` key would arrive as `null` through a non-null type. It is nullable here so
+ * the boundary is explicit and callers handle "no hashtags key" deliberately (DATA-10).
+ */
 data class HashtagSearchResponse(
-    @SerializedName("hashtags") val hashtags: List<TagItem> = emptyList()
+    @SerializedName("hashtags") val hashtags: List<TagItem>? = null
 )
 
 data class MediaAttachment(

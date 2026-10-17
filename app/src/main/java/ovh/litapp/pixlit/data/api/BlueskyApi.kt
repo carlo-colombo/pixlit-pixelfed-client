@@ -15,7 +15,11 @@ interface BlueskyApi {
 
 data class BlueskyProfile(@SerializedName("pinnedPost") val pinnedPost: PinnedPost? = null)
 data class PinnedPost(val uri: String? = null)
-data class BlueskyPosts(val posts: List<BlueskyPost> = emptyList())
+/**
+ * `app.bsky.feed.getPosts`. Gson populates the class through `Unsafe`, bypassing Kotlin defaults, so
+ * a response without a `posts` key would otherwise put `null` into a non-null property (DATA-10).
+ */
+data class BlueskyPosts(val posts: List<BlueskyPost>? = null)
 data class BlueskyPost(
     val record: BlueskyRecord? = null,
     val embed: BlueskyEmbed? = null
