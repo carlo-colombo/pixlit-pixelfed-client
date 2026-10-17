@@ -13,8 +13,10 @@ android {
         applicationId "ovh.litapp.pixlit"
         minSdk 34
         targetSdk 35
-        versionCode 1
-        versionName "1.0.0"
+        // CI passes -Pandroid.versionName/-Pandroid.versionCode derived from the release tag.
+        // The fallbacks keep local and PR builds on the historical 1.0.0 / 1 values.
+        versionCode = (findProperty("android.versionCode") ?: "1").toString().toInteger()
+        versionName = (findProperty("android.versionName") ?: "1.0.0").toString()
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -55,12 +57,13 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -76,6 +79,24 @@ android {
             systemProperty "robolectric.dependency.repo.id", "custom"
             systemProperty "robolectric.dependency.repo.url", "https://maven-central.storage-download.googleapis.com/maven2/"
         }
+    }
+
+    lint {
+        // Full lint (not just AGP's automatic lintVital*Release) must fail the build on errors.
+        // A lint baseline has not been generated yet, so every current warning must stay visible;
+        // once the first CI lint run establishes the pre-existing debt, commit a baseline and set
+        // warningsAsErrors = true.
+        abortOnError = true
+        checkDependencies = true
+        warningsAsErrors = false
+    }
+}
+
+// This module compiles Kotlin through AGP's built-in Kotlin support (no kotlin-android plugin),
+// so the Kotlin compile tasks are configured directly; compileOptions above only pins the Java side.
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile).configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
     }
 }
 
@@ -97,6 +118,9 @@ dependencies {
     implementation libs.androidx.material.icons.extended
     implementation libs.androidx.browser
     implementation libs.androidx.exifinterface
+
+    // Encrypted credential storage for the security lane.
+    implementation libs.androidx.security.crypto
 
     // OkHttp & Retrofit
     implementation libs.okhttp
