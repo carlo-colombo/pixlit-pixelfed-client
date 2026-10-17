@@ -89,6 +89,12 @@ jobs:
             -Pandroid.versionCode="${{ steps.build_config.outputs.version_code }}" \
             :app:assembleCiProdRelease
 
+      - name: Stop the R8 daemon before validation
+        # `assembleCiProdRelease` above leaves a Gradle daemon that has just run R8; releasing it
+        # before the test+lint validation keeps the 7 GB runner's memory headroom. A native OOM in
+        # this job's process-reaper thread once hung a release run.
+        run: ./gradlew --stop
+
       - name: Validate prod variant before signing
         # `assembleCiProdRelease` above already runs R8 minification, resource
         # shrinking and lintVitalCiProdRelease, but nothing else exercises the

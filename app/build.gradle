@@ -5,6 +5,24 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Robolectric resolves its own android-all runtime: its LegacyDependencyResolver falls back to a
+// live Maven fetch into ~/.m2 unless it is pointed at a local jar, and the first CI run of the new
+// release pipeline hung on that fetch while a test sandbox was initialising. Declaring the artifact
+// here puts the download through ordinary Gradle dependency resolution (and Gradle's dependency
+// caches), and `copyRobolectricAndroidAll` stages the jar flat, which is the layout Robolectric's
+// LocalDependencyResolver looks in. Keep the version in lockstep with the `sdk=34` pin in
+// app/src/test/resources/robolectric.properties.
+configurations.create("robolectricAndroidAll") {
+    canBeConsumed = false
+    canBeResolved = true
+}
+def robolectricAndroidAllDir = layout.buildDirectory.dir("robolectric-android-all")
+def copyRobolectricAndroidAll = tasks.register("copyRobolectricAndroidAll", Copy) {
+    description = "Stages Robolectric's android-all runtime jar for offline unit tests."
+    from(configurations.named("robolectricAndroidAll"))
+    into(robolectricAndroidAllDir)
+}
+
 android {
     namespace = 'ovh.litapp.pixlit'
     compileSdk 37
@@ -73,11 +91,17 @@ android {
     }
 
     testOptions {
+        // Robolectric reads the merged manifest and resources through the unit-test classpath.
+        unitTests.includeAndroidResources = true
         unitTests.all {
             maxHeapSize = "2048m"
             jvmArgs "-Xshare:off"
-            systemProperty "robolectric.dependency.repo.id", "custom"
-            systemProperty "robolectric.dependency.repo.url", "https://maven-central.storage-download.googleapis.com/maven2/"
+            // Stage the pinned android-all runtime and force Robolectric to use it offline, so no
+            // test run ever depends on a live Maven fetch.
+            dependsOn(copyRobolectricAndroidAll)
+            systemProperty "robolectric.offline", "true"
+            systemProperty "robolectric.dependency.dir", robolectricAndroidAllDir.get().asFile.absolutePath
+            inputs.property("robolectricAndroidAll", libs.versions.androidAllInstrumented.get())
         }
     }
 
@@ -87,7 +111,8 @@ android {
         // once the first CI lint run establishes the pre-existing debt, commit a baseline and set
         // warningsAsErrors = true.
         abortOnError = true
-        checkDependencies = true
+        // checkDependencies is deliberately off: analysing every dependency's lint was the largest
+        // single memory consumer in the release job and contributed to a runner OOM.
         warningsAsErrors = false
     }
 }
@@ -153,6 +178,7 @@ dependencies {
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.turbine
     testImplementation libs.mockk
+    add("robolectricAndroidAll", libs.android.all.instrumented)
     androidTestImplementation libs.androidx.junit
     androidTestImplementation libs.androidx.espresso.core
     androidTestImplementation platform(libs.androidx.compose.bom)
