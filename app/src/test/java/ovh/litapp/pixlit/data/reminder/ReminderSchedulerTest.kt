@@ -12,7 +12,6 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import io.mockk.coEvery
-import io.mockk.isNull
 import io.mockk.mockk
 import io.mockk.verify
 import java.io.IOException

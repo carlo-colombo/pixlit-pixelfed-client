@@ -4,7 +4,7 @@ Individual, PR-sized task files derived from [`docs/backlog.md`](../../backlog.m
 which was produced from the six-reviewer repo sweep in [`docs/review/`](../../review/).
 No code has been changed while producing these tasks.
 
-**89 tasks** (one per backlog ID), all `Status: Todo`. Wave 0 is ready to
+**90 tasks** (one per backlog ID), all `Status: Todo`. Wave 0 is ready to
 schedule; see [Execution model](#execution-model).
 
 Source of truth for a task's priority, size, evidence and dependencies is its own
@@ -18,7 +18,7 @@ file; this index is a generated view of `Wave / Priority / Size / Dependencies`.
 | 1 | Upload reliability, data correctness, onboarding | 13–24 | Blocked on Wave 0 interfaces |
 | 2 | CI to the blueprint standard | 25–37 | Planned |
 | 3 | Remaining data/perf/build hardening | 34–54 (excl. Wave 2 items) | Planned |
-| 4 | Refactor, UX, a11y, tests | 55–89 | Planned |
+| 4 | Refactor, UX, a11y, tests, licensing | 55–90 | Planned |
 
 ## How to read
 
@@ -148,6 +148,7 @@ Each task file has: **Problem** (with `file:line` evidence), **Scope**
 | 87 | [TEST-03](tasks/task-87-test-03-in-memory-room-dao-tests.md) | Add in-memory Room DAO tests | 4 | P2 | M | REL-12 |
 | 88 | [TEST-04](tasks/task-88-test-04-reminder-scheduling-tests.md) | Add reminder scheduling tests | 4 | P3 | S | — |
 | 89 | [UP-13](tasks/task-89-up-13-upload-low-severity-bundle.md) | Upload low-severity fixes bundle | 4 | P3 | S | REF-01 |
+| 90 | [REL-16](tasks/task-90-rel-16-copyright-and-license.md) | Add a copyright notice and an open-source license, shipped with the app | 4 | P2 | M | REL-11, BUILD-07 |
 
 ## Open decisions
 

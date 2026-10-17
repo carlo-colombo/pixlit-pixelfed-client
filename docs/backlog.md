@@ -16,7 +16,7 @@ code has been changed for this backlog. **No item is marked `verified` by a
 build run yet** — the P0 rows were re-read against source by the parent; the
 rest carry the reviewer's own evidence.
 
-Per-task breakdowns (89 files, one per ID) are in
+Per-task breakdowns (90 files, one per ID) are in
 [`docs/plans/repo-review/`](plans/repo-review/README.md).
 
 Blueprint for conventions, CI and release: [`../neurhome`](../../neurhome)
@@ -143,6 +143,7 @@ Acceptance for Wave 0: see [Wave 0 exit criteria](#wave-0-exit-criteria).
 | REL-12 | **Room schema export is not configured, so the committed-schema gate is impossible.** No `schemaDirectory`/`app/schemas`; `AppDatabase.kt:4-7` `exportSchema = false`. Fix: configure export, commit `app/schemas`, add the CI dirtiness check. | M | 2× | BUILD-12 | 01#8, 06 |
 | REL-14 | **Dead workflow config and an inconsistent PR fallback version.** `build.yml:3-4` unused env; `FLAVOR` written but never read; `1.0.0-pr` (`:71`) vs `1.0.0-pr-<run>` (`:92`). Fix: delete dead config, derive once. | S | review | — | 01#15 |
 | REL-15 | **`.gitignore` misses `.kotlin/`** (and `.artifacts/`), so build-session state shows as untracked noise. | S | 2× | — | 01#16, 02 |
+| REL-16 | **No copyright notice, no project license, and no license or notice document in the release.** `ls LICENSE* NOTICE*` is empty; `README.md` has no License section; the APK carries only AndroidX `META-INF/**/LICENSE.txt` plus one dependency `NOTICE.md`; `build.yml:243-258` attaches only the APK and its `.sha256`. Fix: add `LICENSE`/`NOTICE`/`THIRD_PARTY_LICENSES.md`, stage them into `assets/licenses/`, show them in an About surface, attach them to the release and state the SPDX id and source tag, and pin them with a JVM test (port `neurhome` `db45ece`). | M | repo | REL-11, BUILD-07 | repo |
 
 ### Security / privacy
 
