@@ -66,6 +66,7 @@ else is sequential.
 | **2** | CI to the blueprint standard | REL-06…12, REL-14, SEC-03, BUILD-04, BUILD-07 | `pr.yml` with `required-checks`, SHA-pinned actions, least privilege, Dependabot, Room schema gate, lint gate, Gradle caching |
 | **3** | Remaining data/perf/build | SEC-05, SEC-06, DATA-06…11, BUILD-02, BUILD-03, BUILD-05, BUILD-06, BUILD-08, UP-07…12 | No main-thread I/O; single-flight + TTL caching; flavor matrix cost removed |
 | **4** | Refactor, UX, a11y, tests | REF-01…03, UX-03…18, PLAT-01, PLAT-02, BUILD-09…13, DATA-12…15, TEST-01…04, UP-13 | Shared `UploadUiState`; tabs extracted; confirm/undo/IME/back/a11y fixed; data-layer tests |
+| **5 (final)** | Documentation refresh — **DOC-01 / task 91** | Update `AGENTS.md` + `README.md` to the shipped code and CI | Docs match the repo; every documented command works |
 
 ### Wave 0 lanes (file-disjoint, can run in parallel)
 
