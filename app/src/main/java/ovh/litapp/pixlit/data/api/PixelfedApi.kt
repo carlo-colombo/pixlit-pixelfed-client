@@ -125,24 +125,6 @@ fun JsonElement?.toSafeString(): String? {
     }
 }
 
-data class RegisterAppResponse(
-    @SerializedName("id") val id: JsonElement? = null,
-    @SerializedName("client_id") val clientId: JsonElement? = null,
-    @SerializedName("client_secret") val clientSecret: JsonElement? = null
-) {
-    fun getClientIdString(): String? = clientId.toSafeString()
-    fun getClientSecretString(): String? = clientSecret.toSafeString()
-}
-
-data class TokenResponse(
-    @SerializedName("access_token") val accessToken: JsonElement? = null,
-    @SerializedName("token_type") val tokenType: JsonElement? = null,
-    @SerializedName("scope") val scope: JsonElement? = null,
-    @SerializedName("created_at") val createdAt: JsonElement? = null
-) {
-    fun getAccessTokenString(): String? = accessToken.toSafeString()
-}
-
 data class MediaResponse(
     @SerializedName("id") val id: JsonElement? = null,
     @SerializedName("type") val type: JsonElement? = null,
