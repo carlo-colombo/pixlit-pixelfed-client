@@ -1,19 +1,24 @@
 name: Build
 
-env:
-  main_project_module: app
+# Least privilege by default; the push-only build/release job opts into
+# contents: write below so it can push the build tag and create the GitHub
+# release. PRs never run this workflow (they run pr.yml), so no run that can be
+# triggered by a pull_request can ever hold a write-capable token.
+permissions:
+  contents: read
 
 on:
   push:
     branches:
       - 'main'
-  pull_request:
-    branches:
-      - 'main'
 
 concurrency:
+  # A release must not be cancelled once its tag exists, so queued main runs
+  # wait instead of superseding each other. This is the "second push mid-release
+  # cannot cancel a run after its tag exists" guarantee REL-01 asks for; PR runs
+  # still cancel each other in pr.yml.
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -22,90 +27,226 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Bump version and push tag (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        id: bump_and_tag
-        uses: anothrNick/github-tag-action@v1
+      - name: Resolve release version
+        # Dry run: computes the tag this run is going to publish (`new_tag`)
+        # without creating it, so the build below can stamp the versionName the
+        # signed APK will carry. The tag is pushed only after "Validate prod
+        # variant before signing" succeeds, because a failure anywhere between a
+        # pushed tag and the GitHub release leaves an orphan tag with no release.
+        id: version
+        uses: anothrNick/github-tag-action@4ed44965e0db8dab2b466a16da04aec3cc312fd8 # 1.75.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WITH_V: false
           PRERELEASE: true
           PRERELEASE_SUFFIX: build
           INITIAL_VERSION: 1.0.0
+          DRY_RUN: true
 
-      - name: Set Up JDK
-        uses: actions/setup-java@v5
-        with:
-          java-version: 17
-          distribution: temurin
+      - name: Set Up JDK and Gradle
+        uses: ./.github/actions/setup-jdk-gradle
 
-      - name: Set Up Gradle
-        uses: gradle/actions/setup-gradle@v6
-
-      - name: Set Build Config
+      - name: Derive version code
+        # Android's versionCode is a single integer, so encode the resolved tag
+        # as major*1e8 + minor*1e6 + patch*1e3 + prerelease-build-number. The tag
+        # action bumps the patch for every release and increments the `build.N`
+        # prerelease counter within a base, so the value is monotonic across
+        # releases. `-Pandroid.versionCode` is read by app/build.gradle via
+        # findProperty (REL-02).
         id: build_config
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "FLAVOR=dev" >> $GITHUB_ENV
-            echo "ASSEMBLE_TASK=assembleCiDevRelease" >> $GITHUB_ENV
-            echo "RELEASE_DIR=app/build/outputs/apk/ciDev/release" >> $GITHUB_ENV
-            echo "APK_PREFIX=app-ci-dev-release" >> $GITHUB_ENV
-            echo "release_dir=app/build/outputs/apk/ciDev/release" >> $GITHUB_OUTPUT
-          else
-            echo "FLAVOR=prod" >> $GITHUB_ENV
-            echo "ASSEMBLE_TASK=assembleCiProdRelease" >> $GITHUB_ENV
-            echo "RELEASE_DIR=app/build/outputs/apk/ciProd/release" >> $GITHUB_ENV
-            echo "APK_PREFIX=app-ci-prod-release" >> $GITHUB_ENV
-            echo "release_dir=app/build/outputs/apk/ciProd/release" >> $GITHUB_OUTPUT
-          fi
+          set -euo pipefail
+          tag="${{ steps.version.outputs.new_tag }}"
+          base="${tag%%-*}"
+          IFS='.' read -r major minor patch <<< "$base"
+          for name in major minor patch; do
+            value="${!name:-0}"
+            case "$value" in
+              ''|*[!0-9]*) echo "::error::cannot parse version from tag '$tag'"; exit 1 ;;
+            esac
+          done
+          major="${major:-0}"
+          minor="${minor:-0}"
+          patch="${patch:-0}"
+          build_number="${tag##*-build.}"
+          case "$build_number" in
+            ''|*[!0-9]*) build_number=0 ;;
+          esac
+          version_code=$(( major * 100000000 + minor * 1000000 + patch * 1000 + build_number ))
+          echo "tag=$tag"
+          echo "versionCode=$version_code"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
 
       - name: Assemble APK
         run: |
-          TAG_VERSION="${{ steps.bump_and_tag.outputs.new_tag }}"
-          if [ -z "$TAG_VERSION" ]; then
-            TAG_VERSION="1.0.0-pr"
-          fi
           ./gradlew \
-            -Pandroid.versionName="$TAG_VERSION" \
-            "${ASSEMBLE_TASK}"
+            -Pandroid.versionName="${{ steps.version.outputs.new_tag }}" \
+            -Pandroid.versionCode="${{ steps.build_config.outputs.version_code }}" \
+            :app:assembleCiProdRelease
+
+      - name: Validate prod variant before signing
+        # `assembleCiProdRelease` above already runs R8 minification, resource
+        # shrinking and lintVitalCiProdRelease, but nothing else exercises the
+        # ciProd flavor's unit tests or the release variant's full lint, so a
+        # release-only breakage would reach signing - and, before REL-01, the
+        # tag push. AGP only creates unit-test tasks for the tested build type
+        # (`debug`), so there is no `:app:testCiProdReleaseUnitTest`; the tasks
+        # that exist for this flavor/build type are the ones below.
+        run: |
+          ./gradlew \
+            -Pandroid.versionName="${{ steps.version.outputs.new_tag }}" \
+            -Pandroid.versionCode="${{ steps.build_config.outputs.version_code }}" \
+            :app:testCiProdDebugUnitTest \
+            :app:lintCiProdRelease
+
+      - name: Bump version and push tag
+        # Runs only once the prod variant has validated, so a validation failure
+        # cannot leave a tag without a release. `CUSTOM_TAG` pins the pushed tag
+        # to the version the APK was built and validated with, so the signed
+        # APK's versionName always equals the published tag.
+        id: bump_and_tag
+        uses: anothrNick/github-tag-action@4ed44965e0db8dab2b466a16da04aec3cc312fd8 # 1.75.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WITH_V: false
+          PRERELEASE: true
+          PRERELEASE_SUFFIX: build
+          INITIAL_VERSION: 1.0.0
+          CUSTOM_TAG: ${{ steps.version.outputs.new_tag }}
+
+      - name: Resolve build-tools version from the SDK
+        id: build_tools
+        # The signing step below shells out to <sdk>/build-tools/<version>/zipalign
+        # and apksigner. This used to be a third-party APK-signing action pinned
+        # to the literal build-tools 34.0.0 - a version this project does not
+        # control (it compiles against SDK 37) - and a past run failed because
+        # those pinned build-tools were missing from the runner image. Resolve
+        # the highest installed version that actually ships apksigner instead of
+        # hard-coding one.
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$sdk_root" ] || [ ! -d "$sdk_root/build-tools" ]; then
+            echo "::error::No Android SDK build-tools directory (ANDROID_SDK_ROOT='${ANDROID_SDK_ROOT:-}' ANDROID_HOME='${ANDROID_HOME:-}')"
+            exit 1
+          fi
+          version=""
+          while IFS= read -r candidate; do
+            if [ -x "$sdk_root/build-tools/$candidate/apksigner" ]; then
+              version="$candidate"
+              break
+            fi
+          done < <(find "$sdk_root/build-tools" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -Vr)
+          if [ -z "$version" ]; then
+            echo "::error::No build-tools directory under $sdk_root/build-tools contains apksigner"
+            exit 1
+          fi
+          echo "Signing with build-tools $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Require signing secrets
+        # Fail before any signing work when a secret is missing or renamed. The
+        # old workflow defaulted `ALIAS` to `key` and `KEY_STORE_PASSWORD` to
+        # `password`, so a missing secret silently attempted to sign with a
+        # guessable password instead of failing loudly.
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in SIGNING_KEY ALIAS KEY_STORE_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::missing signing secret: $name"
+              exit 1
+            fi
+          done
 
       - name: Sign Android release
         id: sign_app
-        uses: r0adkll/sign-android-release@d5f8436b702872ad5cdb1e6e4d5c8b983d25a997
-        with:
-          releaseDirectory: ${{ steps.build_config.outputs.release_dir }}
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.ALIAS || 'key' }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD || 'password' }}
+        # Replaces the previous third-party APK-signing action, which was
+        # SHA-pinned but unmaintained and emitted the deprecated `::set-output`
+        # command on every release run:
+        #   1. decode the SIGNING_KEY secret into a keystore file
+        #   2. zipalign the unsigned APK to app-ci-prod-release-unsigned-aligned.apk
+        #   3. `apksigner sign --ks <keystore> --out ...-signed.apk`
+        #   4. `apksigner verify` the result
+        # The keystore is kept out of the workspace and readable by the runner
+        # user only, and both the keystore and the aligned APK are removed on
+        # exit. `--key-pass` is deliberately not passed: this workflow has never
+        # set a distinct key password, so no secret beyond the existing three is
+        # required.
         env:
-          BUILD_TOOLS_VERSION: "34.0.0"
-
-      - name: Prepare Signed APK artifact
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          BUILD_TOOLS_VERSION: ${{ steps.build_tools.outputs.version }}
         run: |
-          TAG_VERSION="${{ steps.bump_and_tag.outputs.new_tag }}"
-          if [ -z "$TAG_VERSION" ]; then
-            TAG_VERSION="1.0.0-pr-${{ github.run_number }}"
+          set -euo pipefail
+          release_dir="app/build/outputs/apk/ciProd/release"
+          unsigned_apk="$release_dir/app-ci-prod-release-unsigned.apk"
+          aligned_apk="$release_dir/app-ci-prod-release-unsigned-aligned.apk"
+          signed_apk="$release_dir/app-ci-prod-release-unsigned-signed.apk"
+          if [ ! -f "$unsigned_apk" ]; then
+            echo "::error::No unsigned release APK at $unsigned_apk"
+            exit 1
           fi
-          if [ -f "${RELEASE_DIR}/${APK_PREFIX}-unsigned-signed.apk" ]; then
-            cp "${RELEASE_DIR}/${APK_PREFIX}-unsigned-signed.apk" "pixelfed-client-${TAG_VERSION}.apk"
-          else
-            cp "${RELEASE_DIR}/${APK_PREFIX}-unsigned.apk" "pixelfed-client-${TAG_VERSION}.apk"
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          build_tools="$sdk_root/build-tools/$BUILD_TOOLS_VERSION"
+          for tool in zipalign apksigner; do
+            if [ ! -x "$build_tools/$tool" ]; then
+              echo "::error::$build_tools/$tool is missing or not executable"
+              exit 1
+            fi
+          done
+
+          umask 077
+          keystore="$(mktemp "${RUNNER_TEMP:-/tmp}/pixlit-keystore.XXXXXX")"
+          trap 'rm -f "$keystore" "$aligned_apk"' EXIT
+          # Strip whitespace first: `base64 -d` tolerates newlines but exits
+          # non-zero on a stray carriage return in the secret, which the Node
+          # decoder in the replaced action silently ignored.
+          printf '%s' "$SIGNING_KEY" | tr -d '[:space:]' | base64 -d > "$keystore"
+          if [ ! -s "$keystore" ]; then
+            echo "::error::SIGNING_KEY did not decode to a keystore"
+            exit 1
           fi
 
-      - name: Upload APK Artifact (PR & Main)
-        uses: actions/upload-artifact@v4
+          "$build_tools/zipalign" -f -p 4 "$unsigned_apk" "$aligned_apk"
+          "$build_tools/apksigner" sign \
+            --ks "$keystore" \
+            --ks-key-alias "$ALIAS" \
+            --ks-pass "pass:$KEY_STORE_PASSWORD" \
+            --out "$signed_apk" \
+            "$aligned_apk"
+          "$build_tools/apksigner" verify --verbose "$signed_apk"
+
+          echo "signed_apk=$signed_apk" >> "$GITHUB_OUTPUT"
+
+      - name: Rename release
+        run: mv "${{ steps.sign_app.outputs.signed_apk }}" "pixelfed-client-${{ steps.version.outputs.new_tag }}.apk"
+
+      - name: Generate release checksum
+        run: sha256sum "pixelfed-client-${{ steps.version.outputs.new_tag }}.apk" > "pixelfed-client-${{ steps.version.outputs.new_tag }}.apk.sha256"
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pixelfed-client-apk
-          path: pixelfed-client-*.apk
+          path: |
+            pixelfed-client-${{ steps.version.outputs.new_tag }}.apk
+            pixelfed-client-${{ steps.version.outputs.new_tag }}.apk.sha256
+          retention-days: 90
 
-      - name: Release (Main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+      - name: Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ steps.bump_and_tag.outputs.new_tag }}
-          files: pixelfed-client-${{ steps.bump_and_tag.outputs.new_tag }}.apk
+          files: |
+            pixelfed-client-${{ steps.version.outputs.new_tag }}.apk
+            pixelfed-client-${{ steps.version.outputs.new_tag }}.apk.sha256
