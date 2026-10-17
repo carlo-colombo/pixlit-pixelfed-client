@@ -2,7 +2,7 @@
 
 Pixlit links against the open-source libraries listed below. Each artifact is grouped by
 the license its published Maven POM declares. This file covers the resolved
-`ciProdReleaseRuntimeClasspath` of `:app` (the runtime dependencies of the shipped APK),
+`prodReleaseRuntimeClasspath` of `:app` (the runtime dependencies of the shipped APK),
 audited 120 artifacts.
 
 Regenerate it when a dependency is added, removed, or upgraded. It is packaged into the

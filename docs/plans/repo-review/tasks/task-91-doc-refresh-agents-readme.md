@@ -1,6 +1,6 @@
 # Task 91 — DOC-01: Refresh `AGENTS.md` and `README.md` after the backlog is complete
 
-**Wave 5 (final) · Priority P2 · Size M · Status: Todo.**
+**Wave 5 (final) · Priority P2 · Size M · Status: Done.**
 Backlog: [docs/backlog.md](../../../backlog.md) · Added by operator request on issue #30
 (2026-10-17). Run this **after every other task**, so it documents the final shipped state.
 
@@ -32,12 +32,28 @@ commands. Documenting too early would bake in stale claims; this task is deliber
 - [ ] The documented architecture names the actual extracted seams/classes.
 - [ ] The README License section and `NOTICE`/`LICENSE` agree.
 
+## Outcome
+
+- `AGENTS.md` and `README.md` now describe the shipped code and CI: the `dev`/`prod` flavors, the
+  single `UploadUiState`, the `data/{tags,auth,session,media,status,api}` seams behind
+  `PixelfedRepository`, the `@HiltWorker` upload with foreground data-sync + idempotency key, Room
+  schema export v3, DataStore reminder prefs, EncryptedSharedPreferences credentials, the
+  validate-before-tag release pipeline (SHA-pinned actions, Dependabot automerge, license/notice
+  verification, checksums), JBR 21, and GPL-3.0-or-later.
+- **BUILD-12 is skipped by operator request** ("Ignore the baseline task"); no `:baselineprofile`
+  module was added.
+- **REF-03 is an alias of DATA-06** (repository seams listed there to avoid duplication); there is
+  no separate REF-03 work.
+- Residual follow-ups, recorded in [`docs/backlog.md`](../../../backlog.md): SEC-03's PKCE verifier
+  is in-memory only, and UX-14 now measures the caret position with `BasicTextField` +
+  `DecorationBox` instead of assuming an 8 dp glyph width.
+
 ## Dependencies
 
 - **All other tasks** (Wave 0–4 + REL-16 + this backlog's remaining items). Do not start earlier.
 
 ## Verification
 
-- Run each documented command once (`./gradlew :app:assembleLocalDevDebug`,
-  `:app:testCiDevDebugUnitTest`, `:app:lintCiDevDebug`, `:app:testCiProdDebugUnitTest`,
-  `:app:lintCiProdRelease`) and confirm the docs describe what happens.
+- Run each documented command once (`./gradlew :app:assembleDevDebug`,
+  `:app:testDevDebugUnitTest`, `:app:lintDevDebug`, `:app:testProdDebugUnitTest`,
+  `:app:lintProdRelease`) and confirm the docs describe what happens.

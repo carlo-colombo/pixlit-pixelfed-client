@@ -2,10 +2,17 @@
 
 Individual, PR-sized task files derived from [`docs/backlog.md`](../../backlog.md),
 which was produced from the six-reviewer repo sweep in [`docs/review/`](../../review/).
-No code has been changed while producing these tasks.
+No code was changed while producing these tasks.
 
-**90 tasks** (one per backlog ID), all `Status: Todo`. Wave 0 is ready to
-schedule; see [Execution model](#execution-model).
+> **Delivered.** The remediation has since landed on `main`; the task files below are kept as the
+> historical plan and cite the pre-fix `file:line` evidence, so their `local`/`ci` variant names and
+> findings describe the state at planning time, not the current repo. See
+> [`docs/backlog.md`](../../backlog.md) for the outcome, including the operator-requested BUILD-12
+> skip and the REF-03/DATA-06 alias. The [Verification commands](#verification-commands) below use
+> the shipped `dev`/`prod` flavor names.
+
+**90 tasks** (one per backlog ID), all `Status: Todo` in this plan. Wave 0 was
+ready to schedule; see [Execution model](#execution-model).
 
 Source of truth for a task's priority, size, evidence and dependencies is its own
 file; this index is a generated view of `Wave / Priority / Size / Dependencies`.
@@ -49,10 +56,12 @@ Each task file has: **Problem** (with `file:line` evidence), **Scope**
 
 ## Verification commands
 
-- Build: `./gradlew :app:assembleLocalDevDebug`
-- Unit: `./gradlew :app:testLocalDevDebugUnitTest`
-- Prod gate (required pre-release): `./gradlew :app:testCiProdDebugUnitTest :app:lintCiProdRelease`
-- Release: `aapt dump badging app/build/outputs/apk/ciProd/release/*.apk | grep versionName`
+- Build (dev): `./gradlew :app:assembleDevDebug`
+- Unit tests (dev): `./gradlew :app:testDevDebugUnitTest`
+- Lint (dev debug): `./gradlew :app:lintDevDebug`
+- Prod gate (required pre-release): `./gradlew :app:testProdDebugUnitTest :app:lintProdRelease`
+- Release build: `./gradlew :app:assembleProdRelease`
+- Release smoke: `aapt dump badging app/build/outputs/apk/prod/release/*.apk | grep versionName`
 - Reports: `app/build/reports/tests/**`, `app/build/reports/lint-results-*.html`
 
 ## Tasks

@@ -11,10 +11,34 @@ lives in [`docs/review/`](review/):
 - [`05-ux-compose.md`](review/05-ux-compose.md) — UX + Compose quality
 - [`06-images-db-background.md`](review/06-images-db-background.md) — images/Room/WorkManager/entry
 
-Every finding below cites the source report and the `file:line` it rests on. No
-code has been changed for this backlog. **No item is marked `verified` by a
-build run yet** — the P0 rows were re-read against source by the parent; the
-rest carry the reviewer's own evidence.
+Every finding below cites the source report and the `file:line` it rests on. The
+findings are the **original review evidence** — the snapshot taken before the
+remediation — kept here for provenance. They are deliberately *not* rewritten to
+the shipped code; [`AGENTS.md`](../AGENTS.md) and [`README.md`](../README.md) are
+the current description of the repo.
+
+## Status
+
+**Delivered.** The Wave 0–4 remediation landed on `main`, and the final `DOC-01`
+(task 91) refresh brought `AGENTS.md` and `README.md` in line with the shipped
+code and CI. Every item in the tables below is implemented except the one
+operator-requested skip recorded here.
+
+- **BUILD-12 (baseline profile) is skipped by operator request** — "Ignore the
+  baseline task". No `:baselineprofile` module was added, and the `profileinstaller`
+  question is therefore moot.
+- **REF-03 is an alias of DATA-06.** It has no separate work; the repository seams
+  are delivered by DATA-06 only.
+- **Residual follow-ups** (documented, not defects):
+  - SEC-03: the S256 PKCE verifier is held **in memory only**, so an authorization
+    redirect that returns to a new process cannot be completed; the user simply
+    retries the login.
+  - UX-14: the hashtag popup no longer assumes an 8 dp glyph width — `CaptionField`
+    uses a `BasicTextField` with a measured caret position (`DecorationBox`), so the
+    popup is positioned from real layout data.
+
+Variant names in the verification snippets below reflect the shipped `dev`/`prod`
+flavors; the blueprints that used `local`/`ci` names are historical.
 
 Per-task breakdowns (90 files, one per ID) are in
 [`docs/plans/repo-review/`](plans/repo-review/README.md).
@@ -22,10 +46,6 @@ Per-task breakdowns (90 files, one per ID) are in
 Blueprint for conventions, CI and release: [`../neurhome`](../../neurhome)
 (`.github/workflows/{build,pr}.yml`, `.github/actions/setup-jdk-gradle/action.yml`,
 `.github/dependabot.yml`, `gradle/gradle-daemon-jvm.properties`, `docs/backlog.md`).
-
-## Status
-
-Not started. Wave 0 is ready to schedule. See [Delivery plan](#delivery-plan).
 
 ## ID scheme
 
@@ -65,7 +85,7 @@ else is sequential.
 | **1** | Upload reliability, data correctness, onboarding | UP-02…06, DATA-01…05, UX-01, UX-02 | Upload survives process death; EXIF/metadata races gone; login failure recoverable; debug tools absent from prod |
 | **2** | CI to the blueprint standard | REL-06…12, REL-14, SEC-03, BUILD-04, BUILD-07 | `pr.yml` with `required-checks`, SHA-pinned actions, least privilege, Dependabot, Room schema gate, lint gate, Gradle caching |
 | **3** | Remaining data/perf/build | SEC-05, SEC-06, DATA-06…11, BUILD-02, BUILD-03, BUILD-05, BUILD-06, BUILD-08, UP-07…12 | No main-thread I/O; single-flight + TTL caching; flavor matrix cost removed |
-| **4** | Refactor, UX, a11y, tests | REF-01…03, UX-03…18, PLAT-01, PLAT-02, BUILD-09…13, DATA-12…15, TEST-01…04, UP-13 | Shared `UploadUiState`; tabs extracted; confirm/undo/IME/back/a11y fixed; data-layer tests |
+| **4** | Refactor, UX, a11y, tests | REF-01…03, UX-03…18, PLAT-01, PLAT-02, BUILD-09…13 (BUILD-12 skipped), DATA-12…15, TEST-01…04, UP-13 | Shared `UploadUiState`; tabs extracted; confirm/undo/IME/back/a11y fixed; data-layer tests |
 | **5 (final)** | Documentation refresh — **DOC-01 / task 91** | Update `AGENTS.md` + `README.md` to the shipped code and CI | Docs match the repo; every documented command works |
 
 ### Wave 0 lanes (file-disjoint, can run in parallel)
@@ -83,9 +103,11 @@ UP-02 in Wave 1) — do not run those lanes concurrently.
 
 ### Verification commands
 
-- Build: `./gradlew :app:assembleLocalDevDebug`
-- Unit (local): `./gradlew :app:testLocalDevDebugUnitTest` (delete the alias task first, see BUILD-03)
-- Prod gate (required pre-release): `./gradlew :app:testCiProdDebugUnitTest :app:lintCiProdRelease`
+- Build (dev): `./gradlew :app:assembleDevDebug`
+- Unit tests (dev): `./gradlew :app:testDevDebugUnitTest`
+- Lint (dev debug): `./gradlew :app:lintDevDebug`
+- Prod gate (required pre-release): `./gradlew :app:testProdDebugUnitTest :app:lintProdRelease`
+- Release build: `./gradlew :app:assembleProdRelease`
 - Release smoke: install the built APK, confirm `aapt dump badging … | grep versionName`
 - Reports: `app/build/reports/tests/**`, `app/build/reports/lint-results-*.html`
 
@@ -189,7 +211,7 @@ Acceptance for Wave 0: see [Wave 0 exit criteria](#wave-0-exit-criteria).
 |---|---|---|---|---|---|
 | REF-01 | **`UploadScreen` (~845 lines) + `UploadViewModel` (~606 lines) with 27 `MutableStateFlow`s and a 45-parameter composable.** Fix: introduce `UploadUiState` (single `StateFlow`) and extract `ImagePipeline`/`LocationController`/`CaptionController`/`CollectionController`/`UploadSubmitter`. | L | 2× | UP-03, UP-04 | 03, 05 |
 | REF-02 | **Extract the five tab bodies out of `UploadContent`.** `UploadScreen.kt:255-790`. Fix: `UploadTabContent`, `RecentPostsTabContent`, `DebugTabContent`, `SettingsTabContent`; move `SocialScreen` out of the upload feature. | M | 2× | UX-02 | 03, 05 |
-| REF-03 | **See DATA-06** (repository seams listed there to avoid duplication). | — | — | DATA-06 | 04 |
+| REF-03 | **Alias of DATA-06** (repository seams listed there to avoid duplication). No separate work. | — | — | DATA-06 | 04 |
 
 ### UX
 
@@ -233,7 +255,7 @@ Acceptance for Wave 0: see [Wave 0 exit criteria](#wave-0-exit-criteria).
 | BUILD-09 | **`coil = 2.7.0` is built against OkHttp 4.x while the app pins OkHttp 5.5.0**; plus AGP/Kotlin/Compose drift from `neurhome` and no `mavenCentral()` fallback. `libs.versions.toml:12,14`. | M | review | — | 02 |
 | BUILD-10 | **Unused/redundant deps and dead config**: `material-icons-core` alongside `extended`, dead `androidTest*` block, `mockk-android`, `vectorDrawables`, empty `main/res/values/strings.xml`, `rootProject.name = "PixelfedClient"` vs "Pixlit". | S | review | — | 02 |
 | BUILD-11 | **No Compose compiler metrics/stability configuration.** `app/build.gradle:62-64`. Fix: `composeCompiler { metricsDestination … }` + stability config. | S | review | — | 02 |
-| BUILD-12 | **No baseline profile** (app classes absent from the merged profile). Fix: `:baselineprofile` module; skip `profileinstaller` at minSdk 34. | M | review | — | 02 |
+| BUILD-12 | **No baseline profile** (app classes absent from the merged profile). Fix: `:baselineprofile` module; skip `profileinstaller` at minSdk 34. **Skipped by operator request** ("Ignore the baseline task") — no module was added. | M | review | — | 02 |
 | BUILD-13 | **KSP catalog comment says the Kotlin pairing is a guess** (`libs.versions.toml:25`). Fix or delete. | S | review | — | 02 |
 | DATA-12 | **`searchPlaces` falls back to `pixelfed.social` when logged out and sends no auth.** `PixelfedRepository.kt:257-261`. | S | review | SEC-04 | 04 F-22 |
 | DATA-13 | **`getFileFromUri` swallows the cause, uses `printStackTrace`, and does not `use {}` its streams.** `PixelfedRepository.kt:733-739`. | S | review | — | 04 F-23 |
@@ -256,15 +278,16 @@ Acceptance for Wave 0: see [Wave 0 exit criteria](#wave-0-exit-criteria).
 ## Wave 0 exit criteria
 
 Wave 0 is the only wave whose acceptance is fully specified here; later waves get
-their own task files when scheduled.
+their own task files when scheduled. All eight were met by the shipped
+remediation (the command snippets use the shipped `dev`/`prod` variant names).
 
 1. **REL-02** — after a `main` push, `aapt dump badging` of the released APK
-   shows `versionName` equal to the pushed tag; a local `./gradlew assembleCiProdRelease`
+   shows `versionName` equal to the pushed tag; a local `./gradlew :app:assembleProdRelease`
    with `-Pandroid.versionName=9.9.9` shows `9.9.9`.
-2. **REL-01** — the tag/release only appear after `testCiProdDebugUnitTest` +
-   `lintCiProdRelease` pass; simulating a failing test leaves **no** new tag.
+2. **REL-01** — the tag/release only appear after `testProdDebugUnitTest` +
+   `lintProdRelease` pass; simulating a failing test leaves **no** new tag.
 3. **REL-03/04** — CI fails on a deliberately broken unit test; the PR workflow
-   is present and the release workflow validates `ciProd` before signing.
+   is present and the release workflow validates `prod` before signing.
 4. **SEC-01** — a release build's logcat contains no `Authorization` header and
    no `client_secret`/`access_token`; uploads still succeed.
 5. **SEC-02** — the token file is unreadable as plaintext (encrypted) and is
@@ -272,22 +295,19 @@ their own task files when scheduled.
 6. **UP-01** — resizing an oversized (e.g. 48 MP) fixture completes without OOM
    and produces a bounded bitmap; a regression test asserts the bound.
 7. **REL-13** — CI and the local daemon use the same JDK version/vendor.
-8. `./gradlew :app:testLocalDevDebugUnitTest` is green.
+8. `./gradlew :app:testDevDebugUnitTest` is green.
 
-## Open decisions (need operator input before Wave 1/2)
+## Decisions (resolved)
 
-1. **Release cadence** — every `main` push currently creates a GitHub release.
-   Keep that, or release on demand (`workflow_dispatch` / tag push)?
-2. **Branch protection** — `neurhome` deliberately does *not* require
-   `required-checks`. Should Pixlit require it, given it has a release job on `main`?
-3. **Min SDK 34 / JDK 21** — pin everything to JBR 21 like `neurhome`, or keep
-   the CI JDK at 17 and add a daemon pin for 17 instead?
-4. **Flavor matrix** — collapse the `distribution` dimension, or keep four
-   variants and scope unit tests to one?
-5. **Credential storage** — `EncryptedSharedPreferences` is the quick fix;
-   DataStore + Keystore is the durable one. Which now?
-6. **Upload execution model** — foreground `@HiltWorker` vs. keeping the
-   ViewModel upload and adding only progress/cancel. The report recommends the
-   worker for durability.
-7. **`docs/review/`** — these six reports are currently untracked. Commit them
-   as the evidence base, or keep them out of git and rely on this backlog?
+These were open before Wave 1/2 and were settled by the shipped implementation:
+
+1. **Release cadence** — every `main` push still creates a release (dry-run tag →
+   build → validate → push), with queued rather than cancelled runs.
+2. **Branch protection** — `required-checks` is an always-on job so it can be
+   made a required check; making it required is an operator/ repo-settings choice.
+3. **JDK** — everything is pinned to the JetBrains Runtime 21.
+4. **Flavor matrix** — collapsed to one `env` dimension (`dev`/`prod`).
+5. **Credential storage** — Keystore-backed `EncryptedSharedPreferences` now,
+   which is the shipped durable choice.
+6. **Upload execution model** — foreground `@HiltWorker` with an idempotency key.
+7. **`docs/review/`** — committed as the evidence base (it is tracked).
