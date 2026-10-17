@@ -9,11 +9,12 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
-import ovh.litapp.pixlit.data.api.PixelfedApi
+import ovh.litapp.pixlit.BuildConfig
 import ovh.litapp.pixlit.data.api.BlueskyApi
-import ovh.litapp.pixlit.data.auth.TokenManager
+import ovh.litapp.pixlit.data.auth.AuthInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
 @Module
@@ -28,13 +29,26 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+    fun provideOkHttpClient(authInterceptor: AuthInterceptor): OkHttpClient {
+        val builder = OkHttpClient.Builder()
+            .addInterceptor(authInterceptor)
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(120, TimeUnit.SECONDS)
+            .callTimeout(180, TimeUnit.SECONDS)
+
+        // Debug-only diagnostics: BASIC (never BODY) so no request/response body — which can
+        // contain the OAuth client_secret or an 8 MB upload — is ever buffered or logged.
+        if (BuildConfig.DEBUG) {
+            builder.addInterceptor(
+                HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.BASIC
+                    redactHeader("Authorization")
+                }
+            )
         }
-        return OkHttpClient.Builder()
-            .addInterceptor(logging)
-            .build()
+
+        return builder.build()
     }
 
     @Provides
