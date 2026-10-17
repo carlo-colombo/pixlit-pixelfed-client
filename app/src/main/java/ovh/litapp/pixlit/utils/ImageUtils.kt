@@ -8,9 +8,9 @@ import android.location.Geocoder
 import androidx.exifinterface.media.ExifInterface
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.util.Locale
 
 data class ImageMetadata(
@@ -42,6 +42,19 @@ data class ImageMetadata(
 
 object ImageUtils {
     const val MAX_BYTES_8MB = 8 * 1024 * 1024L // 8 MB
+
+    /**
+     * Hard upper bound on the pixels decoded from a single source image.
+     *
+     * A byte-size target of [MAX_BYTES_8MB] on a 48 MP photo asks for ~58% of the
+     * source, which a power-of-two `inSampleSize` cannot express, so the classic
+     * halving loop would decode at full resolution (UP-01). Bounding the decoded
+     * pixel count keeps the peak allocation independent of the source size.
+     */
+    internal const val MAX_DECODE_PIXELS = 12_000_000
+
+    private const val MIN_DIMENSION = 100
+    private const val TAG = "ImageUtils"
 
     fun getImageMetadata(context: Context, uri: Uri): ImageMetadata? {
         val sizeBytes = getFileSize(context, uri) ?: return null
@@ -290,6 +303,10 @@ object ImageUtils {
     /**
      * Resizes the image at [uri] down so its file size is <= [maxSizeBytes] by reducing pixel dimensions
      * and compressing as JPEG.
+     *
+     * Totality (UP-12): never throws. Any decode/encode/filesystem failure logs and returns `null`,
+     * `OutOfMemoryError` on pathological input is caught defensively, and the temporary file is
+     * deleted on every failure path so no partial `resized_upload_*` remains.
      */
     fun resizeImageDownToMaxBytes(
         context: Context,
@@ -303,97 +320,129 @@ object ImageUtils {
             return copyUriToTempFile(context, uri)
         }
 
-        var currentWidth = originalMetadata.width
-        var currentHeight = originalMetadata.height
-        var quality = 90
+        var tempFile: File? = null
+        try {
+            val file = File.createTempFile("resized_upload_", ".jpg", context.cacheDir)
+            tempFile = file
 
-        val tempFile = File.createTempFile("resized_upload_", ".jpg", context.cacheDir)
+            // Initial scale derived from the byte-size ratio; capped at 1.0 so we never upscale.
+            var scale = 0.95
+            val ratio = Math.sqrt(maxSizeBytes.toDouble() / originalMetadata.sizeBytes.toDouble())
+            if (ratio < 0.95) {
+                scale = ratio
+            }
+            var quality = 90
 
-        // Iteratively scale down pixel dimensions until file size is under maxSizeBytes
-        var scale = 0.95
-        val ratio = Math.sqrt(maxSizeBytes.toDouble() / originalMetadata.sizeBytes.toDouble())
-        if (ratio < 0.95) {
-            scale = ratio
+            // Iteratively scale down pixel dimensions until file size is under maxSizeBytes
+            while (true) {
+                val targetWidth = (originalMetadata.width * scale).toInt().coerceAtLeast(MIN_DIMENSION)
+                val targetHeight = (originalMetadata.height * scale).toInt().coerceAtLeast(MIN_DIMENSION)
+
+                val bitmap = decodeBoundedBitmap(context, uri, targetWidth, targetHeight)
+                if (bitmap == null) {
+                    file.delete()
+                    return null
+                }
+
+                // The bounded decode may return a bitmap smaller than requested; only shrink
+                // further, never upscale.
+                val outputBitmap = if (bitmap.width > targetWidth || bitmap.height > targetHeight) {
+                    Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true).also {
+                        if (it != bitmap) bitmap.recycle()
+                    }
+                } else {
+                    bitmap
+                }
+
+                val written = try {
+                    FileOutputStream(file).use { out ->
+                        outputBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
+                    }
+                } finally {
+                    outputBitmap.recycle()
+                }
+                if (!written) {
+                    file.delete()
+                    return null
+                }
+
+                if (file.length() <= maxSizeBytes ||
+                    (targetWidth <= MIN_DIMENSION && targetHeight <= MIN_DIMENSION)
+                ) {
+                    break
+                }
+
+                // Adjust scale for next iteration if still too big
+                scale *= 0.85
+                if (quality > 50) {
+                    quality -= 10
+                }
+            }
+
+            return file
+        } catch (e: OutOfMemoryError) {
+            Log.w(TAG, "resize failed: out of memory for $uri", e)
+            tempFile?.delete()
+            return null
+        } catch (t: Throwable) {
+            Log.w(TAG, "resize failed for $uri", t)
+            tempFile?.delete()
+            return null
         }
-
-        while (true) {
-            currentWidth = (currentWidth * scale).toInt().coerceAtLeast(100)
-            currentHeight = (currentHeight * scale).toInt().coerceAtLeast(100)
-
-            val bitmap = decodeSampledBitmapFromUri(context, uri, currentWidth, currentHeight)
-                ?: return null
-
-            val scaledBitmap = if (bitmap.width != currentWidth || bitmap.height != currentHeight) {
-                Bitmap.createScaledBitmap(bitmap, currentWidth, currentHeight, true)
-            } else {
-                bitmap
-            }
-
-            val outStream = FileOutputStream(tempFile)
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outStream)
-            outStream.close()
-
-            if (scaledBitmap != bitmap) {
-                scaledBitmap.recycle()
-            }
-            bitmap.recycle()
-
-            if (tempFile.length() <= maxSizeBytes || (currentWidth <= 100 && currentHeight <= 100)) {
-                break
-            }
-
-            // Adjust scale for next iteration if still too big
-            scale = 0.85
-            if (quality > 50) {
-                quality -= 10
-            }
-        }
-
-        return tempFile
     }
 
-    private fun decodeSampledBitmapFromUri(
+    /**
+     * Decodes [uri] at (or near) [reqWidth]x[reqHeight] without ever allocating more than
+     * [MAX_DECODE_PIXELS] pixels, applying the EXIF orientation.
+     */
+    internal fun decodeBoundedBitmap(
         context: Context,
         uri: Uri,
         reqWidth: Int,
         reqHeight: Int
     ): Bitmap? {
-        return try {
-            val orientation = getExifOrientation(context, uri)
-            val swapped = isSwappedDimensions(orientation)
+        val orientation = getExifOrientation(context, uri)
+        val swapped = isSwappedDimensions(orientation)
 
-            val options = BitmapFactory.Options().apply {
-                inJustDecodeBounds = true
-            }
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                BitmapFactory.decodeStream(stream, null, options)
-            }
-
-            val rawReqWidth = if (swapped) reqHeight else reqWidth
-            val rawReqHeight = if (swapped) reqWidth else reqHeight
-
-            options.inSampleSize = calculateInSampleSize(options, rawReqWidth, rawReqHeight)
-            options.inJustDecodeBounds = false
-
-            val decodedBitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
-                BitmapFactory.decodeStream(stream, null, options)
-            } ?: return null
-
-            rotateBitmap(decodedBitmap, orientation)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
         }
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)
+        }
+        if (options.outWidth <= 0 || options.outHeight <= 0) return null
+
+        val rawReqWidth = if (swapped) reqHeight else reqWidth
+        val rawReqHeight = if (swapped) reqWidth else reqHeight
+
+        options.inSampleSize = calculateBoundedInSampleSize(options, rawReqWidth, rawReqHeight)
+        options.inJustDecodeBounds = false
+
+        val decodedBitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)
+        } ?: return null
+
+        return rotateBitmap(decodedBitmap, orientation)
     }
 
-    private fun calculateInSampleSize(
+    /**
+     * Picks an `inSampleSize` that (a) never decodes more than [MAX_DECODE_PIXELS] and
+     * (b) does not decode smaller than the requested size when the source allows it, so the
+     * caller never has to upscale.
+     */
+    private fun calculateBoundedInSampleSize(
         options: BitmapFactory.Options,
         reqWidth: Int,
         reqHeight: Int
     ): Int {
-        val (height: Int, width: Int) = options.outHeight to options.outWidth
         var inSampleSize = 1
 
+        val sourcePixels = options.outWidth.toLong() * options.outHeight.toLong()
+        while (sourcePixels / (inSampleSize.toLong() * inSampleSize) > MAX_DECODE_PIXELS) {
+            inSampleSize *= 2
+        }
+
+        val (height: Int, width: Int) = options.outHeight to options.outWidth
         if (height > reqHeight || width > reqWidth) {
             val halfHeight: Int = height / 2
             val halfWidth: Int = width / 2
@@ -407,16 +456,22 @@ object ImageUtils {
     }
 
     private fun copyUriToTempFile(context: Context, uri: Uri): File? {
+        var tempFile: File? = null
         return try {
-            val inputStream: InputStream = context.contentResolver.openInputStream(uri) ?: return null
-            val tempFile = File.createTempFile("original_upload_", ".jpg", context.cacheDir)
-            val outputStream = FileOutputStream(tempFile)
-            inputStream.copyTo(outputStream)
-            inputStream.close()
-            outputStream.close()
-            tempFile
-        } catch (e: Exception) {
-            e.printStackTrace()
+            val file = File.createTempFile("original_upload_", ".jpg", context.cacheDir)
+            tempFile = file
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                FileOutputStream(file).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            } ?: run {
+                file.delete()
+                return null
+            }
+            file
+        } catch (t: Throwable) {
+            Log.w(TAG, "copy failed for $uri", t)
+            tempFile?.delete()
             null
         }
     }
