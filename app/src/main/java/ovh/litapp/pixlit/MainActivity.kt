@@ -94,7 +94,11 @@ class MainActivity : ComponentActivity() {
                                 onSharedImageUrisConsumed = { viewModel.consumeSharedImageUris() },
                                 reminderPreferences = reminderPreferences,
                                 reminderScheduler = reminderScheduler,
-                                onSimulateNotification = { artShowNotifier.notify("#Minimal", false) }
+                                onSimulateNotification = if (BuildConfig.DEBUG_TOOLS) {
+                                    { artShowNotifier.notify("#Minimal", false) }
+                                } else {
+                                    {}
+                                }
                             )
                         } else {
                             LoginScreen(
