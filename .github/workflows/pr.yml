@@ -149,3 +149,35 @@ jobs:
             exit 1
           fi
           echo "Android build result: $build_result"
+
+  # Dependabot PRs are merged automatically once `build`/`required-checks` pass.
+  # Dependabot-triggered runs get a read-only GITHUB_TOKEN, so this needs a PAT stored as
+  # `DEPENDABOT_TOKEN` (contents: write + pull-requests: write). When the secret is absent the
+  # job warns and skips rather than failing, so Dependabot PRs are never blocked by a missing PAT.
+  automerge:
+    name: automerge
+    needs:
+      - build
+      - required-checks
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Check for DEPENDABOT_TOKEN
+        id: token
+        env:
+          DEPENDABOT_TOKEN: ${{ secrets.DEPENDABOT_TOKEN }}
+        run: |
+          if [ -n "$DEPENDABOT_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::DEPENDABOT_TOKEN is not set; skipping automerge. Add a PAT with contents:write + pull-requests:write to enable it."
+          fi
+      - name: Merge Dependabot PR
+        if: steps.token.outputs.available == 'true'
+        uses: fastify/github-action-merge-dependabot@73ec4cbb5e56df5591eae286972d5b2201ffe90f # v3
+        with:
+          github-token: ${{ secrets.DEPENDABOT_TOKEN }}
