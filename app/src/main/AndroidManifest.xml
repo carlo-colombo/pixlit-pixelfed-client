@@ -74,6 +74,14 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <!-- WorkManager's foreground service must declare the dataSync type matching the
+             FOREGROUND_SERVICE_DATA_SYNC permission the upload worker requests (UP-05), otherwise
+             lint fails with SpecifyForegroundServiceType. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 
 </manifest>
