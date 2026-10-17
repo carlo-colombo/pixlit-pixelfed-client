@@ -10,12 +10,16 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,12 +28,16 @@ import ovh.litapp.pixlit.data.Fetch
 import ovh.litapp.pixlit.data.api.CollectionItem
 import ovh.litapp.pixlit.data.api.PlaceItem
 import ovh.litapp.pixlit.data.api.StatusItem
+import ovh.litapp.pixlit.data.media.PreparedImage
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.data.repository.TagCount
 import ovh.litapp.pixlit.data.work.UploadJob
 import ovh.litapp.pixlit.data.work.UploadJobState
 import ovh.litapp.pixlit.data.work.UploadJobStatus
 import ovh.litapp.pixlit.data.work.UploadScheduler
+import ovh.litapp.pixlit.utils.ImageMetadata
+import ovh.litapp.pixlit.utils.ImageUtils
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -46,6 +54,9 @@ class UploadViewModelTest {
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         every { repository.getDefaultStaticTags() } returns listOf("#tag1", "#tag2")
+        // Stubbed so a caption edit's tag search gets a real `Result<List<String>>` instead of the
+        // relaxed mock's erased `Object`, which cannot be cast back to a List.
+        coEvery { repository.searchTags(any()) } returns Result.success(emptyList())
         coEvery { repository.getUserTopTagsAndPosts(any()) } answers {
             Fetch.Fresh(
                 PixelfedRepository.TagsAndPosts(
@@ -77,16 +88,30 @@ class UploadViewModelTest {
         Dispatchers.resetMain()
     }
 
+    /**
+     * Drains work parked on the real `Dispatchers.IO` used by `updateMetadata`/`detectExifLocation`,
+     * then flushes the resumptions they schedule back onto the test dispatcher. `advanceUntilIdle`
+     * alone cannot see a coroutine suspended on a real dispatcher.
+     */
+    private fun TestScope.settleIo(condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 2_000
+        while (!condition() && System.currentTimeMillis() < deadline) {
+            advanceUntilIdle()
+            Thread.sleep(2)
+        }
+        advanceUntilIdle()
+    }
+
     @Test
     fun `addImages updates selectedImageUris`() = runTest {
         val uri1 = mockk<Uri>(relaxed = true)
         val uri2 = mockk<Uri>(relaxed = true)
         val uris = listOf(uri1, uri2)
-        
+
         viewModel.addImages(uris)
         advanceUntilIdle()
-        
-        assertEquals(uris, viewModel.selectedImageUris.value)
+
+        assertEquals(uris, viewModel.uiState.value.selectedImageUris)
     }
 
     @Test
@@ -95,11 +120,11 @@ class UploadViewModelTest {
         val uri2 = mockk<Uri>(relaxed = true)
         viewModel.addImages(listOf(uri1, uri2))
         advanceUntilIdle()
-        
+
         viewModel.removeImageAt(0)
         advanceUntilIdle()
-        
-        assertEquals(listOf(uri2), viewModel.selectedImageUris.value)
+
+        assertEquals(listOf(uri2), viewModel.uiState.value.selectedImageUris)
     }
 
     @Test
@@ -108,18 +133,18 @@ class UploadViewModelTest {
         val uri2 = mockk<Uri>(relaxed = true)
         viewModel.addImages(listOf(uri1, uri2))
         advanceUntilIdle()
-        
+
         viewModel.shiftRight(0)
         advanceUntilIdle()
-        
-        assertEquals(listOf(uri2, uri1), viewModel.selectedImageUris.value)
-        assertEquals(1, viewModel.currentPage.value)
+
+        assertEquals(listOf(uri2, uri1), viewModel.uiState.value.selectedImageUris)
+        assertEquals(1, viewModel.uiState.value.currentPage)
     }
 
     @Test
     fun `insertTag updates caption correctly`() = runTest {
         viewModel.insertTag("#photography (12)")
-        assertEquals("#photography ", viewModel.captionState.value.text)
+        assertEquals("#photography ", viewModel.uiState.value.caption.text)
     }
 
     @Test
@@ -130,10 +155,10 @@ class UploadViewModelTest {
 
         viewModel.insertTagSuggestion("photography")
 
-        assertEquals("A photo of #photography ", viewModel.captionState.value.text)
+        assertEquals("A photo of #photography ", viewModel.uiState.value.caption.text)
         assertEquals(
             "A photo of #photography ".length,
-            viewModel.captionState.value.selection.start
+            viewModel.uiState.value.caption.selection.start
         )
     }
 
@@ -152,23 +177,23 @@ class UploadViewModelTest {
     @Test
     fun `toggleCollectionSelection allows selecting 0 1 or multiple collections`() = runTest {
         // Initially 0 collections selected
-        assertEquals(emptySet<String>(), viewModel.selectedCollectionIds.value)
+        assertEquals(emptySet<String>(), viewModel.uiState.value.selectedCollectionIds)
 
         // Select 1 collection
         viewModel.toggleCollectionSelection("col1")
-        assertEquals(setOf("col1"), viewModel.selectedCollectionIds.value)
+        assertEquals(setOf("col1"), viewModel.uiState.value.selectedCollectionIds)
 
         // Select second collection (multiple)
         viewModel.toggleCollectionSelection("col2")
-        assertEquals(setOf("col1", "col2"), viewModel.selectedCollectionIds.value)
+        assertEquals(setOf("col1", "col2"), viewModel.uiState.value.selectedCollectionIds)
 
         // Deselect col1
         viewModel.toggleCollectionSelection("col1")
-        assertEquals(setOf("col2"), viewModel.selectedCollectionIds.value)
+        assertEquals(setOf("col2"), viewModel.uiState.value.selectedCollectionIds)
 
         // Deselect col2 -> back to 0 collections
         viewModel.toggleCollectionSelection("col2")
-        assertEquals(emptySet<String>(), viewModel.selectedCollectionIds.value)
+        assertEquals(emptySet<String>(), viewModel.uiState.value.selectedCollectionIds)
     }
 
     @Test
@@ -179,8 +204,8 @@ class UploadViewModelTest {
         viewModel.createAndSelectCollection("Architecture")
         advanceUntilIdle()
 
-        assert(viewModel.selectedCollectionIds.value.contains("new_1"))
-        assert(viewModel.userCollections.value.any { it.getIdString() == "new_1" })
+        assert(viewModel.uiState.value.selectedCollectionIds.contains("new_1"))
+        assert(viewModel.uiState.value.userCollections.any { it.getIdString() == "new_1" })
     }
 
     @Test
@@ -201,8 +226,8 @@ class UploadViewModelTest {
         assertEquals(false, job.resizeTo8Mb)
         assertEquals(setOf("col1", "col2"), job.collectionIds.toSet())
         assertEquals(null, job.placeId)
-        assertEquals(emptySet<String>(), viewModel.selectedCollectionIds.value)
-        assertEquals(false, viewModel.isUploading.value)
+        assertEquals(emptySet<String>(), viewModel.uiState.value.selectedCollectionIds)
+        assertEquals(false, viewModel.uiState.value.isUploading)
     }
 
     @Test
@@ -219,8 +244,8 @@ class UploadViewModelTest {
         advanceUntilIdle()
 
         coVerify { repository.getUserTopTagsAndPosts(forceRefresh = true) }
-        assertEquals(listOf(updatedStatus), viewModel.recentStatuses.value)
-        assertEquals(false, viewModel.isRefreshing.value)
+        assertEquals(listOf(updatedStatus), viewModel.uiState.value.recentStatuses)
+        assertEquals(false, viewModel.uiState.value.isRefreshing)
     }
 
     @Test
@@ -228,9 +253,9 @@ class UploadViewModelTest {
         val place = PlaceItem(id = JsonPrimitive("p1"), name = "Rome", country = "Italy")
         viewModel.selectPlace(place)
 
-        assertEquals(place, viewModel.selectedPlace.value)
-        assertEquals(null, viewModel.customLocationName.value)
-        assertEquals(false, viewModel.isExifAutoDetected.value)
+        assertEquals(place, viewModel.uiState.value.selectedPlace)
+        assertEquals(null, viewModel.uiState.value.customLocationName)
+        assertEquals(false, viewModel.uiState.value.isExifAutoDetected)
     }
 
     @Test
@@ -240,9 +265,9 @@ class UploadViewModelTest {
 
         viewModel.setCustomLocation("Milano")
 
-        assertEquals(null, viewModel.selectedPlace.value)
-        assertEquals("Milano", viewModel.customLocationName.value)
-        assertEquals(false, viewModel.isExifAutoDetected.value)
+        assertEquals(null, viewModel.uiState.value.selectedPlace)
+        assertEquals("Milano", viewModel.uiState.value.customLocationName)
+        assertEquals(false, viewModel.uiState.value.isExifAutoDetected)
     }
 
     @Test
@@ -252,9 +277,9 @@ class UploadViewModelTest {
 
         viewModel.clearLocation()
 
-        assertEquals(null, viewModel.selectedPlace.value)
-        assertEquals(null, viewModel.customLocationName.value)
-        assertEquals(false, viewModel.isExifAutoDetected.value)
+        assertEquals(null, viewModel.uiState.value.selectedPlace)
+        assertEquals(null, viewModel.uiState.value.customLocationName)
+        assertEquals(false, viewModel.uiState.value.isExifAutoDetected)
     }
 
     @Test
@@ -266,7 +291,7 @@ class UploadViewModelTest {
         advanceTimeBy(301)
         advanceUntilIdle()
 
-        assertEquals(places, viewModel.placeSearchResults.value)
+        assertEquals(places, viewModel.uiState.value.placeSearchResults)
     }
 
     @Test
@@ -287,5 +312,178 @@ class UploadViewModelTest {
         assertEquals("", job.caption)
         assertEquals(emptyList<String>(), job.collectionIds)
         assertEquals("place_99", job.placeId)
+    }
+
+    // --- TEST-02: failure paths -------------------------------------------------------------
+
+    @Test
+    fun `upload failure resets isUploading and keeps a retry possible`() = runTest {
+        every { uploadScheduler.observe(any()) } returns flowOf(
+            UploadJobState(UploadJobStatus.Running, uploadedCount = 0, totalCount = 1),
+            UploadJobState(
+                UploadJobStatus.Failed,
+                uploadedCount = 0,
+                totalCount = 1,
+                errorMessage = "network down"
+            )
+        )
+        val uri1 = mockk<Uri>(relaxed = true)
+        viewModel.addImages(listOf(uri1))
+
+        viewModel.upload()
+        advanceUntilIdle()
+
+        val failed = viewModel.uiState.value
+        assertEquals(false, failed.isUploading)
+        assertEquals(true, failed.isError)
+        assertEquals("Upload failed: network down", failed.statusMessage)
+
+        // Retry: the failure cleared isUploading and kept the photos, so a second tap re-enqueues.
+        viewModel.upload()
+        advanceUntilIdle()
+        coVerify(atLeast = 2) { uploadScheduler.enqueue(any()) }
+    }
+
+    @Test
+    fun `cancelled upload resets isUploading and reports the cancellation`() = runTest {
+        every { uploadScheduler.observe(any()) } returns flowOf(
+            UploadJobState(UploadJobStatus.Running, uploadedCount = 1, totalCount = 2),
+            UploadJobState(UploadJobStatus.Cancelled, uploadedCount = 1, totalCount = 2)
+        )
+        val uri1 = mockk<Uri>(relaxed = true)
+        viewModel.addImages(listOf(uri1))
+
+        viewModel.upload()
+        advanceUntilIdle()
+
+        val cancelled = viewModel.uiState.value
+        assertEquals(false, cancelled.isUploading)
+        assertEquals(false, cancelled.isError)
+        assertEquals("Upload cancelled", cancelled.statusMessage)
+        assertEquals(UploadJobStatus.Cancelled, cancelled.uploadProgress?.status)
+    }
+
+    @Test
+    fun `cancelUpload cancels the active work request`() = runTest {
+        val uri1 = mockk<Uri>(relaxed = true)
+        viewModel.addImages(listOf(uri1))
+
+        viewModel.upload()
+        advanceUntilIdle()
+
+        val enqueued = mutableListOf<UploadJob>()
+        coVerify { uploadScheduler.enqueue(capture(enqueued)) }
+        viewModel.cancelUpload()
+
+        verify { uploadScheduler.cancel(enqueued.single().uploadId) }
+    }
+
+    @Test
+    fun `addImages caps the selection at six photos`() = runTest {
+        val uris = (1..8).map { mockk<Uri>(relaxed = true) }
+
+        viewModel.addImages(uris)
+        advanceUntilIdle()
+
+        assertEquals(uris.take(6), viewModel.uiState.value.selectedImageUris)
+        assertEquals(true, viewModel.uiState.value.statusMessage?.contains("not added") == true)
+    }
+
+    @Test
+    fun `addImages de-duplicates a URI picked twice`() = runTest {
+        val uri = mockk<Uri>(relaxed = true)
+
+        viewModel.addImages(listOf(uri, uri))
+        advanceUntilIdle()
+
+        assertEquals(listOf(uri), viewModel.uiState.value.selectedImageUris)
+    }
+
+    @Test
+    fun `oversized source prepares a resized preview when resize is enabled`() = runTest {
+        mockkObject(ImageUtils)
+        val preparedFile = File.createTempFile("prepared", ".jpg")
+        try {
+            val uri = mockk<Uri>(relaxed = true)
+            every { ImageUtils.extractExifLocation(any(), any()) } returns null
+            every { ImageUtils.getImageMetadata(any(), any()) } returns
+                ImageMetadata(9L * 1024 * 1024, 8000, 6000)
+            every { ImageUtils.getFileMetadata(any()) } returns
+                ImageMetadata(2L * 1024 * 1024, 3000, 2000)
+            coEvery { repository.prepareImage(any(), true) } returns Result.success(
+                PreparedImage(uri = uri, file = preparedFile, mimeType = "image/jpeg", fileName = "prepared.jpg")
+            )
+
+            viewModel.onResizeToggled(true)
+            viewModel.addImages(listOf(uri))
+            settleIo { viewModel.uiState.value.resizedMetadata != null }
+
+            coVerify { repository.prepareImage(uri, true) }
+            assertEquals(2L * 1024 * 1024, viewModel.uiState.value.resizedMetadata?.sizeBytes)
+        } finally {
+            unmockkObject(ImageUtils)
+            preparedFile.delete()
+        }
+    }
+
+    @Test
+    fun `source under the eight megabyte bound is never re-encoded`() = runTest {
+        mockkObject(ImageUtils)
+        try {
+            val uri = mockk<Uri>(relaxed = true)
+            every { ImageUtils.extractExifLocation(any(), any()) } returns null
+            every { ImageUtils.getImageMetadata(any(), any()) } returns
+                ImageMetadata(1L * 1024 * 1024, 1024, 768)
+
+            viewModel.onResizeToggled(true)
+            viewModel.addImages(listOf(uri))
+            settleIo { viewModel.uiState.value.originalMetadata != null }
+
+            coVerify(exactly = 0) { repository.prepareImage(any(), any()) }
+            assertEquals(null, viewModel.uiState.value.resizedMetadata)
+        } finally {
+            unmockkObject(ImageUtils)
+        }
+    }
+
+    @Test
+    fun `detected city is applied when no manual location is set`() = runTest {
+        mockkObject(ImageUtils)
+        try {
+            val uri = mockk<Uri>(relaxed = true)
+            every { ImageUtils.extractExifLocation(any(), any()) } returns Pair(41.9, 12.5)
+            every { ImageUtils.cityNameFromLocation(any(), any(), any()) } returns "Rome, Italy"
+
+            viewModel.detectExifLocation(listOf(uri))
+            settleIo { viewModel.uiState.value.customLocationName != null }
+
+            assertEquals("Rome, Italy", viewModel.uiState.value.customLocationName)
+            assertEquals(true, viewModel.uiState.value.isExifAutoDetected)
+            assertEquals(false, viewModel.uiState.value.isDetectingExifLocation)
+        } finally {
+            unmockkObject(ImageUtils)
+        }
+    }
+
+    @Test
+    fun `manual location chosen during EXIF detection is not clobbered`() = runTest {
+        mockkObject(ImageUtils)
+        try {
+            val uri = mockk<Uri>(relaxed = true)
+            val manual = PlaceItem(id = JsonPrimitive("p1"), name = "Milano", country = "Italy")
+            every { ImageUtils.extractExifLocation(any(), any()) } returns Pair(41.9, 12.5)
+            every { ImageUtils.cityNameFromLocation(any(), any(), any()) } returns "Rome, Italy"
+
+            viewModel.detectExifLocation(listOf(uri))
+            advanceUntilIdle()
+            viewModel.selectPlace(manual)
+            settleIo { !viewModel.uiState.value.isDetectingExifLocation }
+
+            assertEquals(manual, viewModel.uiState.value.selectedPlace)
+            assertEquals(null, viewModel.uiState.value.customLocationName)
+            assertTrue(viewModel.uiState.value.isDetectingExifLocation.not())
+        } finally {
+            unmockkObject(ImageUtils)
+        }
     }
 }

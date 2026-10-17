@@ -43,109 +43,19 @@ class UploadViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    private val _selectedImageUris = MutableStateFlow<List<Uri>>(emptyList())
-    val selectedImageUris = _selectedImageUris.asStateFlow()
+    /**
+     * The screen's single source of truth (REF-01). Every public flow that used to exist is now a
+     * field of [UploadUiState]; writers go through [MutableStateFlow.update] so a change is one
+     * `copy` rather than a scattered write.
+     */
+    private val _uiState = MutableStateFlow(UploadUiState())
+    val uiState: StateFlow<UploadUiState> = _uiState.asStateFlow()
 
-    private val _captionState = MutableStateFlow(TextFieldValue(""))
-    val captionState = _captionState.asStateFlow()
-
-    /** Per-photo alt text (UP-10), keyed by the picked URI. Never the caption. */
-    private val _altTexts = MutableStateFlow<Map<Uri, String>>(emptyMap())
-    val altTexts = _altTexts.asStateFlow()
-
-    private val _remoteTagSuggestions = MutableStateFlow<List<String>>(emptyList())
-    val remoteTagSuggestions = _remoteTagSuggestions.asStateFlow()
     private var tagSearchJob: Job? = null
     private var pendingTagQuery: String? = null
 
-    private val _cacheSummary = MutableStateFlow<List<CacheSummaryItem>>(emptyList())
-    val cacheSummary = _cacheSummary.asStateFlow()
-
-    private val _resizeTo8Mb = MutableStateFlow(false)
-    val resizeTo8Mb = _resizeTo8Mb.asStateFlow()
-
-    private val _isUploading = MutableStateFlow(false)
-    val isUploading = _isUploading.asStateFlow()
-
-    /** Per-photo progress of the work-managed upload (UP-05); `null` before the first enqueue. */
-    private val _uploadProgress = MutableStateFlow<UploadJobState?>(null)
-    val uploadProgress = _uploadProgress.asStateFlow()
     private var activeUploadId: String? = null
     private var uploadObservationJob: Job? = null
-
-    private val _statusMessage = MutableStateFlow<String?>(null)
-    val statusMessage = _statusMessage.asStateFlow()
-
-    private val _isError = MutableStateFlow(false)
-    val isError = _isError.asStateFlow()
-
-    private val _topTags = MutableStateFlow<List<TagCount>>(emptyList())
-    val topTags = _topTags.asStateFlow()
-
-    private val _recentStatuses = MutableStateFlow<List<StatusItem>>(emptyList())
-    val recentStatuses = _recentStatuses.asStateFlow()
-
-    private val _visibleRecentPostCount = MutableStateFlow(PAGE_SIZE)
-    val visibleRecentPostCount = _visibleRecentPostCount.asStateFlow()
-
-    private val _isLoadingMorePosts = MutableStateFlow(false)
-    val isLoadingMorePosts = _isLoadingMorePosts.asStateFlow()
-
-    private val _isLoadingTags = MutableStateFlow(false)
-    val isLoadingTags = _isLoadingTags.asStateFlow()
-
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing = _isRefreshing.asStateFlow()
-
-    /**
-     * Starts empty: a genuinely empty collection list must reach the UI as an empty state instead
-     * of the fabricated placeholders the facade used to substitute (DATA-05 / UP-13).
-     */
-    private val _userCollections = MutableStateFlow<List<CollectionItem>>(emptyList())
-    val userCollections = _userCollections.asStateFlow()
-
-    private val _selectedCollectionIds = MutableStateFlow<Set<String>>(emptySet())
-    val selectedCollectionIds = _selectedCollectionIds.asStateFlow()
-
-    private val _isLoadingCollections = MutableStateFlow(false)
-    val isLoadingCollections = _isLoadingCollections.asStateFlow()
-
-    private val _currentPage = MutableStateFlow(0)
-    val currentPage = _currentPage.asStateFlow()
-
-    private val _originalMetadata = MutableStateFlow<ImageMetadata?>(null)
-    val originalMetadata = _originalMetadata.asStateFlow()
-
-    private val _resizedMetadata = MutableStateFlow<ImageMetadata?>(null)
-    val resizedMetadata = _resizedMetadata.asStateFlow()
-
-    private val _isCalculatingResized = MutableStateFlow(false)
-    val isCalculatingResized = _isCalculatingResized.asStateFlow()
-
-    private val _selectedPlace = MutableStateFlow<PlaceItem?>(null)
-    val selectedPlace = _selectedPlace.asStateFlow()
-
-    private val _customLocationName = MutableStateFlow<String?>(null)
-    val customLocationName = _customLocationName.asStateFlow()
-
-    private val _isExifAutoDetected = MutableStateFlow(false)
-    val isExifAutoDetected = _isExifAutoDetected.asStateFlow()
-
-    private val _isExifMissing = MutableStateFlow(false)
-    val isExifMissing = _isExifMissing.asStateFlow()
-
-    private val _placeSearchQuery = MutableStateFlow("")
-    val placeSearchQuery = _placeSearchQuery.asStateFlow()
-
-    private val _placeSearchResults = MutableStateFlow<List<PlaceItem>>(emptyList())
-    val placeSearchResults = _placeSearchResults.asStateFlow()
-
-    /** The place-search box spinner; EXIF geocoding has its own flag ([isDetectingExifLocation]). */
-    private val _isSearchingPlaces = MutableStateFlow(false)
-    val isSearchingPlaces = _isSearchingPlaces.asStateFlow()
-
-    private val _isDetectingExifLocation = MutableStateFlow(false)
-    val isDetectingExifLocation = _isDetectingExifLocation.asStateFlow()
 
     private var placeSearchJob: Job? = null
     private var exifDetectionJob: Job? = null
@@ -161,8 +71,8 @@ class UploadViewModel @Inject constructor(
         // fetchTags() replaces it with live counts when the account request lands.
         viewModelScope.launch {
             val staticTagCounts = repository.getDefaultStaticTagCounts()
-            if (_topTags.value.isEmpty()) {
-                _topTags.value = staticTagCounts
+            if (_uiState.value.topTags.isEmpty()) {
+                _uiState.update { it.copy(topTags = staticTagCounts) }
             }
         }
 
@@ -174,34 +84,42 @@ class UploadViewModel @Inject constructor(
         // Sync metadata when current page or URIs or resize setting changes.
         // collectLatest cancels the superseded page instead of letting it write stale metadata.
         viewModelScope.launch {
-            combine(
-                _currentPage,
-                _selectedImageUris,
-                _resizeTo8Mb
-            ) { page, uris, resize ->
-                Triple(page, uris, resize)
-            }.collectLatest { (page, uris, resize) ->
-                val uri = uris.getOrNull(page)
-                if (uri != null) {
-                    updateMetadata(uri, resize)
-                } else {
-                    clearMetadata()
+            _uiState
+                .map { Triple(it.currentPage, it.selectedImageUris, it.resizeTo8Mb) }
+                .distinctUntilChanged()
+                .collectLatest { (page, uris, resize) ->
+                    val uri = uris.getOrNull(page)
+                    if (uri != null) {
+                        updateMetadata(uri, resize)
+                    } else {
+                        clearMetadata()
+                    }
                 }
-            }
         }
 
-        _selectedImageUris.onEach { uris ->
-            if (uris.isEmpty()) {
-                _isExifMissing.value = false
-                if (!isUserLocationSelectionManual) {
-                    _selectedPlace.value = null
-                    _customLocationName.value = null
-                    _isExifAutoDetected.value = false
+        _uiState
+            .map { it.selectedImageUris }
+            .distinctUntilChanged()
+            .onEach { uris ->
+                if (uris.isEmpty()) {
+                    _uiState.update { it.copy(isExifMissing = false) }
+                    if (!isUserLocationSelectionManual) {
+                        _uiState.update {
+                            it.copy(
+                                selectedPlace = null,
+                                customLocationName = null,
+                                isExifAutoDetected = false
+                            )
+                        }
+                    }
+                } else if (!isUserLocationSelectionManual &&
+                    _uiState.value.selectedPlace == null &&
+                    _uiState.value.customLocationName == null
+                ) {
+                    detectExifLocation(uris)
                 }
-            } else if (!isUserLocationSelectionManual && _selectedPlace.value == null && _customLocationName.value == null) {
-                detectExifLocation(uris)
             }
-        }.launchIn(viewModelScope)
+            .launchIn(viewModelScope)
 
         persistDraft()
     }
@@ -209,7 +127,7 @@ class UploadViewModel @Inject constructor(
     fun detectExifLocation(uris: List<Uri>) {
         exifDetectionJob?.cancel()
         exifDetectionJob = viewModelScope.launch {
-            _isDetectingExifLocation.value = true
+            _uiState.update { it.copy(isDetectingExifLocation = true) }
             try {
                 var foundExif = false
                 for (uri in uris) {
@@ -218,7 +136,7 @@ class UploadViewModel @Inject constructor(
                             ImageUtils.extractExifLocation(context, uri)
                         } ?: continue
                         foundExif = true
-                        _isExifMissing.value = false
+                        _uiState.update { it.copy(isExifMissing = false) }
                         val (lat, lng) = coords
                         val cityName = withContext(Dispatchers.IO) {
                             ImageUtils.cityNameFromLocation(context, lat, lng)
@@ -233,14 +151,18 @@ class UploadViewModel @Inject constructor(
                         // the user may have picked or typed a location while it was in flight.
                         withContext(Dispatchers.Main.immediate) {
                             if (isUserLocationSelectionManual ||
-                                _selectedPlace.value != null ||
-                                _customLocationName.value != null
+                                _uiState.value.selectedPlace != null ||
+                                _uiState.value.customLocationName != null
                             ) {
                                 return@withContext
                             }
-                            _customLocationName.value = locationName
-                            _selectedPlace.value = null
-                            _isExifAutoDetected.value = true
+                            _uiState.update {
+                                it.copy(
+                                    customLocationName = locationName,
+                                    selectedPlace = null,
+                                    isExifAutoDetected = true
+                                )
+                            }
                         }
                         break
                     } catch (e: CancellationException) {
@@ -250,49 +172,52 @@ class UploadViewModel @Inject constructor(
                     }
                 }
                 if (!foundExif && isActive) {
-                    _isExifMissing.value = true
+                    _uiState.update { it.copy(isExifMissing = true) }
                 }
             } finally {
-                _isDetectingExifLocation.value = false
+                _uiState.update { it.copy(isDetectingExifLocation = false) }
             }
         }
     }
 
     /**
-     * [_isSearchingPlaces] flips to `true` before the debounce delay so the composable's
-     * "Use … as location name" fallback stays hidden while the user is typing.
+     * [UploadUiState.isSearchingPlaces] flips to `true` before the debounce delay so the
+     * composable's "Use … as location name" fallback stays hidden while the user is typing.
      */
     fun onPlaceSearchQueryChanged(query: String) {
-        _placeSearchQuery.value = query
+        _uiState.update { it.copy(placeSearchQuery = query) }
         placeSearchJob?.cancel()
         if (query.isBlank()) {
-            _placeSearchResults.value = emptyList()
-            _isSearchingPlaces.value = false
+            _uiState.update { it.copy(placeSearchResults = emptyList(), isSearchingPlaces = false) }
             return
         }
-        _isSearchingPlaces.value = true
+        _uiState.update { it.copy(isSearchingPlaces = true) }
         placeSearchJob = viewModelScope.launch {
             delay(PLACE_SEARCH_DEBOUNCE_MS)
             // A failed search shows no results but is logged; it is not an empty success (DATA-05).
             when (val fetch = repository.searchPlaces(query = query.trim())) {
-                is Fetch.Fresh -> _placeSearchResults.value = fetch.value
-                is Fetch.Cached -> _placeSearchResults.value = fetch.value
+                is Fetch.Fresh -> _uiState.update { it.copy(placeSearchResults = fetch.value) }
+                is Fetch.Cached -> _uiState.update { it.copy(placeSearchResults = fetch.value) }
                 is Fetch.Failed -> {
                     Log.e(TAG, "place search failed", fetch.cause)
-                    _placeSearchResults.value = emptyList()
+                    _uiState.update { it.copy(placeSearchResults = emptyList()) }
                 }
             }
-            _isSearchingPlaces.value = false
+            _uiState.update { it.copy(isSearchingPlaces = false) }
         }
     }
 
     fun selectPlace(place: PlaceItem) {
         exifDetectionJob?.cancel()
-        _selectedPlace.value = place
-        _customLocationName.value = null
-        _isExifAutoDetected.value = false
-        _placeSearchQuery.value = ""
-        _placeSearchResults.value = emptyList()
+        _uiState.update {
+            it.copy(
+                selectedPlace = place,
+                customLocationName = null,
+                isExifAutoDetected = false,
+                placeSearchQuery = "",
+                placeSearchResults = emptyList()
+            )
+        }
         isUserLocationSelectionManual = true
     }
 
@@ -302,21 +227,29 @@ class UploadViewModel @Inject constructor(
             return
         }
         exifDetectionJob?.cancel()
-        _selectedPlace.value = null
-        _customLocationName.value = name.trim()
-        _isExifAutoDetected.value = false
-        _placeSearchQuery.value = ""
-        _placeSearchResults.value = emptyList()
+        _uiState.update {
+            it.copy(
+                selectedPlace = null,
+                customLocationName = name.trim(),
+                isExifAutoDetected = false,
+                placeSearchQuery = "",
+                placeSearchResults = emptyList()
+            )
+        }
         isUserLocationSelectionManual = true
     }
 
     fun clearLocation() {
         exifDetectionJob?.cancel()
-        _selectedPlace.value = null
-        _customLocationName.value = null
-        _isExifAutoDetected.value = false
-        _placeSearchQuery.value = ""
-        _placeSearchResults.value = emptyList()
+        _uiState.update {
+            it.copy(
+                selectedPlace = null,
+                customLocationName = null,
+                isExifAutoDetected = false,
+                placeSearchQuery = "",
+                placeSearchResults = emptyList()
+            )
+        }
         isUserLocationSelectionManual = true
     }
 
@@ -332,38 +265,40 @@ class UploadViewModel @Inject constructor(
                 ImageUtils.getImageMetadata(context, uri)
             }
             if (metadataRequestUri != uri) return
-            _originalMetadata.value = meta
+            _uiState.update { it.copy(originalMetadata = meta) }
 
             if (resize && meta != null && meta.sizeBytes > ImageUtils.MAX_BYTES_8MB) {
-                _isCalculatingResized.value = true
+                _uiState.update { it.copy(isCalculatingResized = true) }
                 val prepared = repository.prepareImage(uri, resize = true).getOrNull()
                 if (metadataRequestUri != uri) return
-                _resizedMetadata.value = prepared?.let { ImageUtils.getFileMetadata(it.file) }
+                _uiState.update {
+                    it.copy(resizedMetadata = prepared?.let { preparedImage -> ImageUtils.getFileMetadata(preparedImage.file) })
+                }
             } else {
-                _resizedMetadata.value = null
+                _uiState.update { it.copy(resizedMetadata = null) }
             }
         } finally {
             if (metadataRequestUri == uri) {
-                _isCalculatingResized.value = false
+                _uiState.update { it.copy(isCalculatingResized = false) }
             }
         }
     }
 
     private fun clearMetadata() {
         metadataRequestUri = null
-        _originalMetadata.value = null
-        _resizedMetadata.value = null
-        _isCalculatingResized.value = false
+        _uiState.update {
+            it.copy(originalMetadata = null, resizedMetadata = null, isCalculatingResized = false)
+        }
     }
 
     fun fetchCollections() {
         viewModelScope.launch {
-            _isLoadingCollections.value = true
+            _uiState.update { it.copy(isLoadingCollections = true) }
             try {
                 when (val fetch = repository.getUserCollections()) {
-                    is Fetch.Fresh -> _userCollections.value = fetch.value
+                    is Fetch.Fresh -> _uiState.update { it.copy(userCollections = fetch.value) }
                     is Fetch.Cached -> {
-                        _userCollections.value = fetch.value
+                        _uiState.update { it.copy(userCollections = fetch.value) }
                         warnOnce("Showing cached collections — the refresh failed")
                     }
                     is Fetch.Failed -> {
@@ -372,19 +307,21 @@ class UploadViewModel @Inject constructor(
                     }
                 }
             } finally {
-                _isLoadingCollections.value = false
+                _uiState.update { it.copy(isLoadingCollections = false) }
             }
         }
     }
 
     fun toggleCollectionSelection(collectionId: String) {
-        val current = _selectedCollectionIds.value.toMutableSet()
-        if (current.contains(collectionId)) {
-            current.remove(collectionId)
-        } else {
-            current.add(collectionId)
+        _uiState.update { state ->
+            val current = state.selectedCollectionIds.toMutableSet()
+            if (current.contains(collectionId)) {
+                current.remove(collectionId)
+            } else {
+                current.add(collectionId)
+            }
+            state.copy(selectedCollectionIds = current)
         }
-        _selectedCollectionIds.value = current
     }
 
     fun createAndSelectCollection(title: String, description: String? = null) {
@@ -397,18 +334,24 @@ class UploadViewModel @Inject constructor(
                 return@launch
             }
             val id = created.getIdString()
-            val currentCollections = _userCollections.value.toMutableList()
-            if (id != null && currentCollections.none { it.getIdString() == id }) {
-                currentCollections.add(0, created)
-                _userCollections.value = currentCollections
-                toggleCollectionSelection(id)
+            _uiState.update { state ->
+                val currentCollections = state.userCollections.toMutableList()
+                if (id != null && currentCollections.none { it.getIdString() == id }) {
+                    currentCollections.add(0, created)
+                    state.copy(
+                        userCollections = currentCollections,
+                        selectedCollectionIds = state.selectedCollectionIds + id
+                    )
+                } else {
+                    state
+                }
             }
         }
     }
 
     fun refreshRecentPosts() {
         viewModelScope.launch {
-            _isRefreshing.value = true
+            _uiState.update { it.copy(isRefreshing = true) }
             try {
                 when (val fetch = repository.getUserTopTagsAndPosts(forceRefresh = true)) {
                     is Fetch.Fresh -> applyTagsAndPosts(fetch.value)
@@ -422,14 +365,14 @@ class UploadViewModel @Inject constructor(
                     }
                 }
             } finally {
-                _isRefreshing.value = false
+                _uiState.update { it.copy(isRefreshing = false) }
             }
         }
     }
 
     fun fetchTags(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            _isLoadingTags.value = true
+            _uiState.update { it.copy(isLoadingTags = true) }
             try {
                 when (val fetch = repository.getUserTopTagsAndPosts(forceRefresh = forceRefresh)) {
                     is Fetch.Fresh -> applyTagsAndPosts(fetch.value)
@@ -439,81 +382,94 @@ class UploadViewModel @Inject constructor(
                     }
                     is Fetch.Failed -> {
                         Log.e(TAG, "fetchTags failure", fetch.cause)
-                        _topTags.value = repository.getDefaultStaticTagCounts()
+                        _uiState.update { it.copy(topTags = repository.getDefaultStaticTagCounts()) }
                         reportError("Could not load your tags and posts: ${fetch.cause.describe()}")
                     }
                 }
             } finally {
-                _isLoadingTags.value = false
+                _uiState.update { it.copy(isLoadingTags = false) }
             }
         }
     }
 
     private suspend fun applyTagsAndPosts(data: PixelfedRepository.TagsAndPosts) {
-        _topTags.value = if (data.topTags.isNotEmpty()) {
+        val topTags = if (data.topTags.isNotEmpty()) {
             data.topTags
         } else {
             repository.getDefaultStaticTagCounts()
         }
-        if (data.statuses.isNotEmpty()) {
-            _recentStatuses.value = data.statuses
-            _visibleRecentPostCount.value = PAGE_SIZE
+        _uiState.update { state ->
+            var next = state.copy(topTags = topTags)
+            if (data.statuses.isNotEmpty()) {
+                next = next.copy(recentStatuses = data.statuses, visibleRecentPostCount = PAGE_SIZE)
+            }
+            next
         }
     }
 
     fun loadMoreRecentPosts() {
-        if (_isLoadingMorePosts.value) return
-        if (_visibleRecentPostCount.value < _recentStatuses.value.size) {
-            _visibleRecentPostCount.value += PAGE_SIZE
+        if (_uiState.value.isLoadingMorePosts) return
+        if (_uiState.value.visibleRecentPostCount < _uiState.value.recentStatuses.size) {
+            _uiState.update { it.copy(visibleRecentPostCount = it.visibleRecentPostCount + PAGE_SIZE) }
             return
         }
 
-        val lastId = _recentStatuses.value.lastOrNull()?.getIdString() ?: return
+        val lastId = _uiState.value.recentStatuses.lastOrNull()?.getIdString() ?: return
         viewModelScope.launch {
-            _isLoadingMorePosts.value = true
+            _uiState.update { it.copy(isLoadingMorePosts = true) }
             repository.getMoreUserStatuses(lastId).onSuccess { moreStatuses ->
-                val existingIds = _recentStatuses.value.mapNotNull { it.getIdString() }.toSet()
-                val newStatuses = moreStatuses.filter { it.getIdString() !in existingIds }
-                _recentStatuses.value += newStatuses
-                _visibleRecentPostCount.value += PAGE_SIZE
+                _uiState.update { state ->
+                    val existingIds = state.recentStatuses.mapNotNull { it.getIdString() }.toSet()
+                    val newStatuses = moreStatuses.filter { it.getIdString() !in existingIds }
+                    state.copy(
+                        recentStatuses = state.recentStatuses + newStatuses,
+                        visibleRecentPostCount = state.visibleRecentPostCount + PAGE_SIZE
+                    )
+                }
             }
-            _isLoadingMorePosts.value = false
+            _uiState.update { it.copy(isLoadingMorePosts = false) }
         }
     }
 
     fun addImages(uris: List<Uri>) {
-        val current = _selectedImageUris.value
+        val current = _uiState.value.selectedImageUris
         // A pick can repeat a URI (e.g. the same photo tapped twice) or re-send one already selected.
         val newUris = uris.distinct().filterNot { it in current }
         val remainingSlots = (MAX_PHOTOS - current.size).coerceAtLeast(0)
         val accepted = newUris.take(remainingSlots)
         if (accepted.isNotEmpty()) {
-            _selectedImageUris.value = current + accepted
+            _uiState.update { it.copy(selectedImageUris = current + accepted) }
         }
         // A successful add clears the previous failure too, not just its message (UP-13).
-        _isError.value = false
+        _uiState.update { it.copy(isError = false) }
         val dropped = newUris.size - accepted.size
         if (dropped > 0) {
-            _statusMessage.value =
-                "Up to $MAX_PHOTOS photos per upload; $dropped photo(s) were not added."
+            _uiState.update {
+                it.copy(statusMessage = "Up to $MAX_PHOTOS photos per upload; $dropped photo(s) were not added.")
+            }
         } else if (accepted.isNotEmpty()) {
-            _statusMessage.value = null
+            _uiState.update { it.copy(statusMessage = null) }
         }
     }
 
     fun removeImageAt(index: Int) {
-        val currentList = _selectedImageUris.value
+        val currentList = _uiState.value.selectedImageUris
         if (index in currentList.indices) {
             val newList = currentList.toMutableList()
             val removed = newList.removeAt(index)
-            _selectedImageUris.value = newList
-            _altTexts.value = _altTexts.value.filterKeys { it != removed }
-
-            // Adjust current page if needed
-            if (_currentPage.value >= newList.size && newList.isNotEmpty()) {
-                _currentPage.value = newList.size - 1
-            } else if (newList.isEmpty()) {
-                _currentPage.value = 0
+            _uiState.update { state ->
+                var next = state.copy(
+                    selectedImageUris = newList,
+                    altTexts = state.altTexts.filterKeys { it != removed }
+                )
+                // Adjust current page if needed
+                next = when {
+                    next.currentPage >= newList.size && newList.isNotEmpty() ->
+                        next.copy(currentPage = newList.size - 1)
+                    newList.isEmpty() -> next.copy(currentPage = 0)
+                    else -> next
+                }
+                next
             }
         }
     }
@@ -524,50 +480,47 @@ class UploadViewModel @Inject constructor(
      * emits one state update.
      */
     fun insertImageAt(index: Int, uri: Uri) {
-        val current = _selectedImageUris.value
+        val current = _uiState.value.selectedImageUris
         if (uri in current || current.size >= MAX_PHOTOS) return
         val insertAt = index.coerceIn(0, current.size)
         val newList = current.toMutableList()
         newList.add(insertAt, uri)
-        _selectedImageUris.value = newList
-        _currentPage.value = insertAt
+        _uiState.update { it.copy(selectedImageUris = newList, currentPage = insertAt) }
     }
 
     fun shiftLeft(index: Int) {
-        val currentList = _selectedImageUris.value
+        val currentList = _uiState.value.selectedImageUris
         if (index > 0 && index < currentList.size) {
             val newList = currentList.toMutableList()
             val temp = newList[index]
             newList[index] = newList[index - 1]
             newList[index - 1] = temp
-            _selectedImageUris.value = newList
-            _currentPage.value = index - 1
+            _uiState.update { it.copy(selectedImageUris = newList, currentPage = index - 1) }
         }
     }
 
     fun shiftRight(index: Int) {
-        val currentList = _selectedImageUris.value
+        val currentList = _uiState.value.selectedImageUris
         if (index >= 0 && index < currentList.size - 1) {
             val newList = currentList.toMutableList()
             val temp = newList[index]
             newList[index] = newList[index + 1]
             newList[index + 1] = temp
-            _selectedImageUris.value = newList
-            _currentPage.value = index + 1
+            _uiState.update { it.copy(selectedImageUris = newList, currentPage = index + 1) }
         }
     }
 
     fun onPageChanged(page: Int) {
-        _currentPage.value = page
+        _uiState.update { it.copy(currentPage = page) }
     }
 
     fun onCaptionChanged(newValue: TextFieldValue) {
-        _captionState.value = newValue
+        _uiState.update { it.copy(caption = newValue) }
         val context = findHashtagContext(newValue)
         tagSearchJob?.cancel()
         pendingTagQuery = null
         if (context == null || context.query.length < 2) {
-            _remoteTagSuggestions.value = emptyList()
+            _uiState.update { it.copy(remoteTagSuggestions = emptyList()) }
             return
         }
 
@@ -582,7 +535,7 @@ class UploadViewModel @Inject constructor(
         if (query.length < 2) {
             tagSearchJob?.cancel()
             pendingTagQuery = null
-            _remoteTagSuggestions.value = emptyList()
+            _uiState.update { it.copy(remoteTagSuggestions = emptyList()) }
             return
         }
         if (query == pendingTagQuery && tagSearchJob?.isActive == true) return
@@ -592,19 +545,19 @@ class UploadViewModel @Inject constructor(
         tagSearchJob = viewModelScope.launch {
             delay(TAG_SEARCH_DEBOUNCE_MS)
             val result = repository.searchTags(query)
-            _remoteTagSuggestions.value = result.getOrDefault(emptyList())
+            _uiState.update { it.copy(remoteTagSuggestions = result.getOrDefault(emptyList())) }
             refreshCacheSummary()
         }
     }
 
     fun refreshCacheSummary() {
         viewModelScope.launch {
-            _cacheSummary.value = repository.getCacheSummary()
+            _uiState.update { it.copy(cacheSummary = repository.getCacheSummary()) }
         }
     }
 
     fun insertHash() {
-        val current = _captionState.value
+        val current = _uiState.value.caption
         val start = current.selection.min.coerceIn(0, current.text.length)
         val end = current.selection.max.coerceIn(start, current.text.length)
         val newText = current.text.substring(0, start) + "#" + current.text.substring(end)
@@ -614,12 +567,14 @@ class UploadViewModel @Inject constructor(
     }
 
     fun onResizeToggled(enabled: Boolean) {
-        _resizeTo8Mb.value = enabled
+        _uiState.update { it.copy(resizeTo8Mb = enabled) }
     }
 
     fun setAltText(uri: Uri, altText: String) {
-        _altTexts.value = _altTexts.value.toMutableMap().apply {
-            if (altText.isBlank()) remove(uri) else put(uri, altText)
+        _uiState.update { state ->
+            val altTexts = state.altTexts.toMutableMap()
+            if (altText.isBlank()) altTexts.remove(uri) else altTexts[uri] = altText
+            state.copy(altTexts = altTexts)
         }
     }
 
@@ -628,7 +583,7 @@ class UploadViewModel @Inject constructor(
         if (tagName.isEmpty()) return
 
         val tagToInsert = "#$tagName "
-        val current = _captionState.value
+        val current = _uiState.value.caption
         val text = current.text
         val selection = current.selection
         val start = selection.min.coerceAtLeast(0)
@@ -637,35 +592,45 @@ class UploadViewModel @Inject constructor(
         val newText = text.substring(0, start) + tagToInsert + text.substring(end)
         val newCursorPos = start + tagToInsert.length
 
-        _captionState.value = TextFieldValue(
-            text = newText,
-            selection = TextRange(newCursorPos)
-        )
+        _uiState.update {
+            it.copy(caption = TextFieldValue(text = newText, selection = TextRange(newCursorPos)))
+        }
     }
 
     fun insertTagSuggestion(tagString: String) {
         val tagName = tagString.trim().removePrefix("#").split(" ").firstOrNull().orEmpty()
-        val context = findHashtagContext(_captionState.value) ?: return
+        val context = findHashtagContext(_uiState.value.caption) ?: return
         if (tagName.isEmpty()) return
 
-        val current = _captionState.value
+        val current = _uiState.value.caption
         val replacement = "#$tagName "
         val newText = current.text.replaceRange(context.start, context.end, replacement)
-        _captionState.value = TextFieldValue(
-            text = newText,
-            selection = TextRange(context.start + replacement.length)
-        )
+        _uiState.update {
+            it.copy(
+                caption = TextFieldValue(
+                    text = newText,
+                    selection = TextRange(context.start + replacement.length)
+                )
+            )
+        }
     }
 
     fun prefillArtShowTags(theme: String?) {
         val tags = listOfNotNull("#BlueSkyArtShow", theme?.takeIf { it.isNotBlank() })
-        val text = _captionState.value.text
+        val text = _uiState.value.caption.text
         val missing = tags.filter { tag ->
             Regex("(?i)(?<!\\w)${Regex.escape(tag)}(?!\\w)").containsMatchIn(text).not()
         }
         if (missing.isNotEmpty()) {
             val suffix = missing.joinToString(" ") + " "
-            _captionState.value = TextFieldValue(text + if (text.isBlank()) "" else " " + suffix, TextRange(text.length + if (text.isBlank()) suffix.length else suffix.length + 1))
+            _uiState.update {
+                it.copy(
+                    caption = TextFieldValue(
+                        text + if (text.isBlank()) "" else " " + suffix,
+                        TextRange(text.length + if (text.isBlank()) suffix.length else suffix.length + 1)
+                    )
+                )
+            }
         }
     }
 
@@ -675,31 +640,36 @@ class UploadViewModel @Inject constructor(
      * [cancelUpload].
      */
     fun upload() {
-        val uris = _selectedImageUris.value
+        val uris = _uiState.value.selectedImageUris
         if (uris.isEmpty()) {
-            _statusMessage.value = "Please select at least one photo"
-            _isError.value = true
+            _uiState.update {
+                it.copy(statusMessage = "Please select at least one photo", isError = true)
+            }
             return
         }
-        if (_isUploading.value) return
+        if (_uiState.value.isUploading) return
 
-        val collectionIds = _selectedCollectionIds.value.toList()
+        val collectionIds = _uiState.value.selectedCollectionIds.toList()
         val job = UploadJob(
             uploadId = UUID.randomUUID().toString(),
             imageUris = uris.map(Uri::toString),
             caption = captionToPublish(),
             altTexts = uris.mapNotNull { uri ->
-                _altTexts.value[uri]?.takeIf { it.isNotBlank() }?.let { uri.toString() to it }
+                _uiState.value.altTexts[uri]?.takeIf { it.isNotBlank() }?.let { uri.toString() to it }
             }.toMap(),
-            resizeTo8Mb = _resizeTo8Mb.value,
+            resizeTo8Mb = _uiState.value.resizeTo8Mb,
             collectionIds = collectionIds,
-            placeId = _selectedPlace.value?.getIdString()
+            placeId = _uiState.value.selectedPlace?.getIdString()
         )
 
-        _isUploading.value = true
-        _uploadProgress.value = UploadJobState(UploadJobStatus.Running, 0, uris.size)
-        _statusMessage.value = null
-        _isError.value = false
+        _uiState.update {
+            it.copy(
+                isUploading = true,
+                uploadProgress = UploadJobState(UploadJobStatus.Running, 0, uris.size),
+                statusMessage = null,
+                isError = false
+            )
+        }
         activeUploadId = job.uploadId
 
         uploadObservationJob?.cancel()
@@ -712,32 +682,37 @@ class UploadViewModel @Inject constructor(
                         old.status == new.status && new.status != UploadJobStatus.Running
                     }
                     .collect { state ->
-                        _uploadProgress.value = state
+                        _uiState.update { it.copy(uploadProgress = state) }
                         when (state.status) {
-                            UploadJobStatus.Running -> _isUploading.value = true
+                            UploadJobStatus.Running ->
+                                _uiState.update { it.copy(isUploading = true) }
                             UploadJobStatus.Succeeded -> {
-                                _isUploading.value = false
+                                _uiState.update { it.copy(isUploading = false) }
                                 onUploadSucceeded(uris, collectionIds.size)
                             }
                             UploadJobStatus.Failed -> {
-                                _isUploading.value = false
+                                _uiState.update { it.copy(isUploading = false) }
                                 reportError(state.failureSummary())
                             }
                             UploadJobStatus.Cancelled -> {
-                                _isUploading.value = false
-                                _statusMessage.value = "Upload cancelled"
-                                _isError.value = false
+                                _uiState.update {
+                                    it.copy(
+                                        isUploading = false,
+                                        statusMessage = "Upload cancelled",
+                                        isError = false
+                                    )
+                                }
                             }
                         }
                     }
                 // The observed flow only ends if WorkManager drops the request; never leave the
                 // screen spinning on a job nobody is running.
-                _isUploading.value = false
+                _uiState.update { it.copy(isUploading = false) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "could not enqueue the upload", e)
-                _isUploading.value = false
+                _uiState.update { it.copy(isUploading = false) }
                 reportError("Could not start the upload: ${e.describe()}")
             }
         }
@@ -753,27 +728,31 @@ class UploadViewModel @Inject constructor(
         val collectionsMsg = if (collectionCount > 0) {
             " and added to $collectionCount collection(s)"
         } else ""
-        _statusMessage.value = "Successfully uploaded ${submitted.size} photo(s)$collectionsMsg!"
-        _isError.value = false
-        // Keep photos picked while the upload was in flight; only the submitted ones are consumed.
-        _selectedImageUris.value = _selectedImageUris.value.filterNot { it in submitted }
-        _altTexts.value = _altTexts.value.filterKeys { it !in submitted }
-        _captionState.value = TextFieldValue("")
-        _selectedCollectionIds.value = emptySet()
-        _selectedPlace.value = null
-        _customLocationName.value = null
-        _isExifAutoDetected.value = false
-        _isExifMissing.value = false
+        _uiState.update { state ->
+            state.copy(
+                statusMessage = "Successfully uploaded ${submitted.size} photo(s)$collectionsMsg!",
+                isError = false,
+                // Keep photos picked while the upload was in flight; only the submitted ones are consumed.
+                selectedImageUris = state.selectedImageUris.filterNot { it in submitted },
+                altTexts = state.altTexts.filterKeys { it !in submitted },
+                caption = TextFieldValue(""),
+                selectedCollectionIds = emptySet(),
+                selectedPlace = null,
+                customLocationName = null,
+                isExifAutoDetected = false,
+                isExifMissing = false,
+                placeSearchQuery = "",
+                placeSearchResults = emptyList()
+            )
+        }
         isUserLocationSelectionManual = false
-        _placeSearchQuery.value = ""
-        _placeSearchResults.value = emptyList()
     }
 
     /** The caption as it will be published, including the manual location line for a place-less post. */
     private fun captionToPublish(): String {
-        val caption = _captionState.value.text
-        val customLocation = _customLocationName.value
-        if (_selectedPlace.value?.getIdString() != null || customLocation.isNullOrBlank()) return caption
+        val caption = _uiState.value.caption.text
+        val customLocation = _uiState.value.customLocationName
+        if (_uiState.value.selectedPlace?.getIdString() != null || customLocation.isNullOrBlank()) return caption
         if (caption.contains(customLocation)) return caption
         return if (caption.isBlank()) "📍 $customLocation" else "$caption\n📍 $customLocation"
     }
@@ -787,15 +766,13 @@ class UploadViewModel @Inject constructor(
     }
 
     private fun reportError(message: String) {
-        _statusMessage.value = message
-        _isError.value = true
+        _uiState.update { it.copy(statusMessage = message, isError = true) }
     }
 
     /** A stale-data warning must not overwrite a message the user is currently reading. */
     private fun warnOnce(message: String) {
-        if (_statusMessage.value == null) {
-            _statusMessage.value = message
-            _isError.value = false
+        if (_uiState.value.statusMessage == null) {
+            _uiState.update { it.copy(statusMessage = message, isError = false) }
         }
     }
 
@@ -808,26 +785,34 @@ class UploadViewModel @Inject constructor(
      */
     private fun restoreDraft() {
         savedStateHandle.get<String>(KEY_CAPTION)?.takeIf { it.isNotEmpty() }?.let { text ->
-            _captionState.value = TextFieldValue(text, TextRange(text.length))
+            _uiState.update { it.copy(caption = TextFieldValue(text, TextRange(text.length))) }
         }
-        savedStateHandle.get<Boolean>(KEY_RESIZE)?.let { _resizeTo8Mb.value = it }
-        savedStateHandle.get<ArrayList<String>>(KEY_COLLECTION_IDS)?.let {
-            _selectedCollectionIds.value = it.toSet()
+        savedStateHandle.get<Boolean>(KEY_RESIZE)?.let { resize ->
+            _uiState.update { it.copy(resizeTo8Mb = resize) }
         }
-        savedStateHandle.get<String>(KEY_CUSTOM_LOCATION)?.let {
-            _customLocationName.value = it
+        savedStateHandle.get<ArrayList<String>>(KEY_COLLECTION_IDS)?.let { ids ->
+            _uiState.update { it.copy(selectedCollectionIds = ids.toSet()) }
+        }
+        savedStateHandle.get<String>(KEY_CUSTOM_LOCATION)?.let { location ->
+            _uiState.update { it.copy(customLocationName = location) }
             isUserLocationSelectionManual = true
         }
         savedStateHandle.get<String>(KEY_PLACE_ID)?.let { placeId ->
-            _selectedPlace.value = PlaceItem(
-                id = JsonPrimitive(placeId),
-                name = savedStateHandle[KEY_PLACE_NAME],
-                country = savedStateHandle[KEY_PLACE_COUNTRY]
-            )
+            _uiState.update {
+                it.copy(
+                    selectedPlace = PlaceItem(
+                        id = JsonPrimitive(placeId),
+                        name = savedStateHandle[KEY_PLACE_NAME],
+                        country = savedStateHandle[KEY_PLACE_COUNTRY]
+                    )
+                )
+            }
             isUserLocationSelectionManual = true
         }
         savedStateHandle.get<Map<String, String>>(KEY_ALT_TEXTS)?.forEach { (uri, altText) ->
-            runCatching { Uri.parse(uri) }.getOrNull()?.let { _altTexts.value += it to altText }
+            runCatching { Uri.parse(uri) }.getOrNull()?.let { parsed ->
+                _uiState.update { it.copy(altTexts = it.altTexts + (parsed to altText)) }
+            }
         }
 
         val restoredUris = savedStateHandle.get<ArrayList<String>>(KEY_URIS)
@@ -838,7 +823,7 @@ class UploadViewModel @Inject constructor(
         // A revoked or deleted URI must be dropped, not crash the metadata or upload path.
         viewModelScope.launch {
             val usable = withContext(Dispatchers.IO) { restoredUris.filter(::canRead) }
-            _selectedImageUris.value = usable
+            _uiState.update { it.copy(selectedImageUris = usable) }
         }
     }
 
@@ -851,23 +836,33 @@ class UploadViewModel @Inject constructor(
 
     /** Writes the draft through to [savedStateHandle] as it changes; see [restoreDraft]. */
     private fun persistDraft() {
-        _captionState.onEach { savedStateHandle[KEY_CAPTION] = it.text }.launchIn(viewModelScope)
-        _selectedImageUris.onEach { uris ->
-            savedStateHandle[KEY_URIS] = ArrayList(uris.map(Uri::toString))
-        }.launchIn(viewModelScope)
-        _resizeTo8Mb.onEach { savedStateHandle[KEY_RESIZE] = it }.launchIn(viewModelScope)
-        _selectedCollectionIds.onEach {
-            savedStateHandle[KEY_COLLECTION_IDS] = ArrayList(it)
-        }.launchIn(viewModelScope)
-        _customLocationName.onEach { savedStateHandle[KEY_CUSTOM_LOCATION] = it }.launchIn(viewModelScope)
-        _selectedPlace.onEach { place ->
-            savedStateHandle[KEY_PLACE_ID] = place?.getIdString()
-            savedStateHandle[KEY_PLACE_NAME] = place?.name
-            savedStateHandle[KEY_PLACE_COUNTRY] = place?.country
-        }.launchIn(viewModelScope)
-        _altTexts.onEach { altTexts ->
-            savedStateHandle[KEY_ALT_TEXTS] = HashMap(altTexts.mapKeys { it.key.toString() })
-        }.launchIn(viewModelScope)
+        _uiState.map { it.caption }.distinctUntilChanged()
+            .onEach { savedStateHandle[KEY_CAPTION] = it.text }
+            .launchIn(viewModelScope)
+        _uiState.map { it.selectedImageUris }.distinctUntilChanged()
+            .onEach { uris -> savedStateHandle[KEY_URIS] = ArrayList(uris.map(Uri::toString)) }
+            .launchIn(viewModelScope)
+        _uiState.map { it.resizeTo8Mb }.distinctUntilChanged()
+            .onEach { savedStateHandle[KEY_RESIZE] = it }
+            .launchIn(viewModelScope)
+        _uiState.map { it.selectedCollectionIds }.distinctUntilChanged()
+            .onEach { savedStateHandle[KEY_COLLECTION_IDS] = ArrayList(it) }
+            .launchIn(viewModelScope)
+        _uiState.map { it.customLocationName }.distinctUntilChanged()
+            .onEach { savedStateHandle[KEY_CUSTOM_LOCATION] = it }
+            .launchIn(viewModelScope)
+        _uiState.map { it.selectedPlace }.distinctUntilChanged()
+            .onEach { place ->
+                savedStateHandle[KEY_PLACE_ID] = place?.getIdString()
+                savedStateHandle[KEY_PLACE_NAME] = place?.name
+                savedStateHandle[KEY_PLACE_COUNTRY] = place?.country
+            }
+            .launchIn(viewModelScope)
+        _uiState.map { it.altTexts }.distinctUntilChanged()
+            .onEach { altTexts ->
+                savedStateHandle[KEY_ALT_TEXTS] = HashMap(altTexts.mapKeys { it.key.toString() })
+            }
+            .launchIn(viewModelScope)
     }
 
     private companion object {
