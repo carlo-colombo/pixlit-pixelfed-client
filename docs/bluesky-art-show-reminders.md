@@ -14,7 +14,7 @@ Remind the user Friday evening and Saturday morning to post a photo for the curr
 | Saturday default | 08:00 local |
 | Times | Configurable in-app (no enable/disable toggle) |
 | Tap | Open upload and prefill `#BlueSkyArtShow` + theme tag |
-| Enablement | Always on; request `POST_NOTIFICATIONS` on launch |
+| Enablement | Always on; `POST_NOTIFICATIONS` is requested from the Settings tab where the reminder is configured |
 | Scheduling | Inexact idle-tolerant `AlarmManager` alarms, one per weekday (not exact alarms) |
 | Timezone | `ZoneId.systemDefault()` |
 
@@ -66,11 +66,12 @@ evening/morning reminders; do not use `SCHEDULE_EXACT_ALARM`.
 - Tap → `MainActivity` extras (`theme`, `prefill=true`); handle `onNewIntent` (`singleTask`)
 - `UploadViewModel` inserts `#BlueSkyArtShow` + theme via existing `insertTag`
 
-Request permission in `MainActivity.onCreate`; schedule regardless so it starts working once granted.
+Request permission from the Settings tab, where the reminder is configured; the app schedules on
+startup regardless so it starts working once granted (`SettingsTabContent.NotificationPermissionNotice`).
 
 ## Settings UI
 
-Always-on (no enable switch). Add a **Settings** tab beside Upload/Debug with two Material3 time pickers. Persist in SharedPreferences (same style as `TokenManager`), reschedule on change. Optional: show this week’s theme on that tab.
+Always-on (no enable switch). A **Settings** tab beside Upload, Social, Recent (and Debug in dev builds) holds two time pickers. Persist with preferences DataStore (`ReminderPreferences`), reschedule on change. The tab also shows the About/license section and a logout button.
 
 ## Wiring
 
