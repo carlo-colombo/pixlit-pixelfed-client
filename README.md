@@ -86,3 +86,17 @@ Tests cover OAuth parsing and token storage, tag extraction and counts, image ut
 ## Scope
 
 Pixlit is optimized for a single user's upload flow. Timeline browsing, Bluesky posting, exact alarms, and suppression of reminders after posting are not supported.
+
+## License
+
+Pixlit is free software, licensed under the **GNU General Public License, version 3 or later**
+(`GPL-3.0-or-later`). Copyright (C) 2026 Carlo Colombo.
+
+The full license text is in [`LICENSE`](LICENSE), the copyright and SPDX identifier in
+[`NOTICE`](NOTICE), and the licenses of the third-party libraries the app links against in
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md). All three ship inside the APK (under
+`assets/licenses/`) and are shown under Settings → About.
+
+This program is distributed in the hope that it will be useful, but **without any warranty**; without
+even the implied warranty of merchantability or fitness for a particular purpose. See the GNU General
+Public License for more details.

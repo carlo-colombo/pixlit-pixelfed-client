@@ -237,6 +237,22 @@ jobs:
       - name: Rename release
         run: mv "${{ steps.sign_app.outputs.signed_apk }}" "pixelfed-client-${{ steps.version.outputs.new_tag }}.apk"
 
+      - name: Verify license and notices are packaged
+        # The GPLv3 obligations are only met if the shipped binary actually carries the license and
+        # the dependency notices. `stageLicenseAssets` copies the root files into assets/licenses/,
+        # so this asserts the wiring survived into the signed APK before it is published. The
+        # listing is captured once: `unzip -l | grep -q` under `pipefail` can fail on SIGPIPE.
+        run: |
+          set -euo pipefail
+          apk="pixelfed-client-${{ steps.version.outputs.new_tag }}.apk"
+          listing="$(unzip -l "$apk")"
+          for asset in assets/licenses/LICENSE assets/licenses/NOTICE assets/licenses/THIRD_PARTY_LICENSES.md; do
+            if ! grep -q "$asset" <<< "$listing"; then
+              echo "::error::$asset is missing from $apk"
+              exit 1
+            fi
+          done
+
       - name: Generate release checksum
         run: sha256sum "pixelfed-client-${{ steps.version.outputs.new_tag }}.apk" > "pixelfed-client-${{ steps.version.outputs.new_tag }}.apk.sha256"
 
@@ -247,12 +263,28 @@ jobs:
           path: |
             pixelfed-client-${{ steps.version.outputs.new_tag }}.apk
             pixelfed-client-${{ steps.version.outputs.new_tag }}.apk.sha256
+            LICENSE
+            NOTICE
+            THIRD_PARTY_LICENSES.md
           retention-days: 90
 
       - name: Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ steps.bump_and_tag.outputs.new_tag }}
+          body: |
+            Licensed under the GNU General Public License, version 3 or later (GPL-3.0-or-later).
+            Copyright (C) 2026 Carlo Colombo.
+
+            Corresponding Source for this binary is the source tree at tag
+            ${{ steps.bump_and_tag.outputs.new_tag }}:
+            https://github.com/carlo-colombo/pixlit-pixelfed-client/tree/${{ steps.bump_and_tag.outputs.new_tag }}
+
+            The full license text, the copyright notice and the third-party notices are attached
+            to this release and are also packaged inside the APK under `assets/licenses/`.
           files: |
             pixelfed-client-${{ steps.version.outputs.new_tag }}.apk
             pixelfed-client-${{ steps.version.outputs.new_tag }}.apk.sha256
+            LICENSE
+            NOTICE
+            THIRD_PARTY_LICENSES.md
