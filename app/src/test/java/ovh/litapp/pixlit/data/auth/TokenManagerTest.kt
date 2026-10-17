@@ -53,12 +53,19 @@ class TokenManagerTest {
     }
 
     @Test
-    fun testTagSearchCachePersists() {
-        tokenManager.tagSearchCacheJson = "{\"pixelfed.social|photo\":{}}"
+    fun testSessionStateAndCredentialsAreObservable() {
+        assertEquals(SessionState.LoggedOut, tokenManager.sessionState.value)
 
-        assertEquals("{\"pixelfed.social|photo\":{}}", tokenManager.tagSearchCacheJson)
+        tokenManager.instanceUrl = "https://pixelfed.social"
+        assertEquals(SessionState.LoggedOut, tokenManager.sessionState.value)
+        assertEquals("https://pixelfed.social", tokenManager.credentials.value.instanceUrl)
+
+        tokenManager.accessToken = "test_token"
+        assertEquals(SessionState.Authenticated, tokenManager.sessionState.value)
+        assertEquals("test_token", tokenManager.credentials.value.accessToken)
 
         tokenManager.clear()
-        assertEquals(null, tokenManager.tagSearchCacheJson)
+        assertEquals(SessionState.LoggedOut, tokenManager.sessionState.value)
+        assertEquals(null, tokenManager.credentials.value.accessToken)
     }
 }

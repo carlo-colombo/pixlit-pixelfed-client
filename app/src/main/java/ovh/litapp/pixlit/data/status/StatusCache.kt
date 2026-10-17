@@ -28,4 +28,7 @@ class StatusCache @Inject constructor(
     }
 
     suspend fun countStatuses(instanceUrl: String): Int = statusDao.countStatuses(instanceUrl)
+
+    /** Purges the cached statuses for one instance, used by the logout path. */
+    suspend fun clearStatuses(instanceUrl: String) = statusDao.clearStatuses(instanceUrl)
 }

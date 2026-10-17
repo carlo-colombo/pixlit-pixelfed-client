@@ -1,6 +1,7 @@
 package ovh.litapp.pixlit.data.db
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.google.gson.Gson
 import com.google.gson.JsonPrimitive
@@ -19,7 +20,10 @@ import java.time.format.DateTimeFormatter
  * [fetchedAt] is only when this row was written. [tagsJson] and [mediaAttachmentsJson] carry the two
  * tag sources the live aggregator reads, so a cached read ranks tags exactly like a live fetch.
  */
-@Entity(tableName = "statuses")
+@Entity(
+    tableName = "statuses",
+    indices = [Index(value = ["instanceUrl", "createdAt"])]
+)
 data class StatusEntity(
     @PrimaryKey val id: String,
     val content: String?,

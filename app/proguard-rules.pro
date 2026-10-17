@@ -30,10 +30,5 @@
 # Keep all data models used with Gson/Retrofit
 -keep class ovh.litapp.pixlit.data.api.** { *; }
 
-# CachedTagSearch is a private type in data.repository deserialised reflectively through
-# TypeToken<Map<String, CachedTagSearch>> with no @SerializedName, so R8 must not rename or
-# strip it; otherwise the tag-search cache silently parses to an empty map in release builds.
--keep class ovh.litapp.pixlit.data.repository.CachedTagSearch { *; }
-
 # Coil ships no consumer rules, so this targeted suppression is still required.
 -dontwarn io.coil-kt.**
