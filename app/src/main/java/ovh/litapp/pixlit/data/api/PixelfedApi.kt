@@ -194,6 +194,7 @@ data class StatusItem(
     @SerializedName("content") val content: String? = null,
     @SerializedName("text") val text: String? = null,
     @SerializedName("description") val description: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("spoiler_text") val spoilerText: String? = null,
     @SerializedName("media_attachments") val mediaAttachments: List<MediaAttachment>? = null,
     @SerializedName("favourites_count") val favouritesCount: Int = 0,

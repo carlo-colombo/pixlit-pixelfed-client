@@ -12,12 +12,15 @@ import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.utils.ImageUtils
 import ovh.litapp.pixlit.data.db.AppDatabase
 import ovh.litapp.pixlit.data.db.StatusDao
-import ovh.litapp.pixlit.data.db.StatusEntity
+import ovh.litapp.pixlit.data.db.toEntity
+import ovh.litapp.pixlit.data.db.toItem
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -30,6 +33,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -41,6 +45,25 @@ private data class CachedTagSearch(
     val names: List<String>
 )
 
+/**
+ * Memoizes the `verify_credentials` account id for one instance+token pair. A different instance or a
+ * new token (logout, re-login) misses the entry, so the id is re-resolved instead of surviving a
+ * session change.
+ */
+internal class AccountIdCache {
+    private data class Entry(val instanceUrl: String, val accessToken: String, val accountId: String)
+
+    private val entry = AtomicReference<Entry?>(null)
+
+    fun get(instanceUrl: String, accessToken: String): String? = entry.get()
+        ?.takeIf { it.instanceUrl == instanceUrl && it.accessToken == accessToken }
+        ?.accountId
+
+    fun put(instanceUrl: String, accessToken: String, accountId: String) {
+        entry.set(Entry(instanceUrl, accessToken, accountId))
+    }
+}
+
 private const val MAX_DISPLAYED_TAGS = 30
 
 @Singleton
@@ -51,6 +74,14 @@ class PixelfedRepository @Inject constructor(
     private val gson: Gson,
     private val statusDao: StatusDao
 ) {
+
+    private val accountIdCache = AccountIdCache()
+    private val accountIdMutex = Mutex()
+
+    /** Serializes status refreshes so concurrent callers share a single fetch. */
+    private val refreshMutex = Mutex()
+    private var lastRefreshAtMs = 0L
+    private var lastRefreshInstanceUrl: String? = null
 
     private fun getRetrofit(baseUrl: String): Retrofit {
         val sanitizedUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
@@ -283,36 +314,31 @@ class PixelfedRepository @Inject constructor(
         val statuses: List<StatusItem>
     )
 
-    fun getStaticStatuses(): List<StatusItem> {
-        val jsonString = try {
-            context.assets.open("pixelfed-statuses.json").use { inputStream ->
-                val size = inputStream.available()
-                Log.d(TAG, "getStaticStatuses: Reading pixelfed-statuses.json, size: $size bytes")
-                inputStream.bufferedReader().readText()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "getStaticStatuses: Failed to read pixelfed-statuses.json from assets", e)
-            return emptyList()
-        }
-
-        return try {
-            val listType = object : TypeToken<List<StatusItem>>() {}.type
-            val statuses: List<StatusItem> = Gson().fromJson(jsonString, listType) ?: emptyList()
-            Log.d(TAG, "getStaticStatuses: Successfully parsed ${statuses.size} statuses")
-            statuses
-        } catch (e: Exception) {
-            Log.e(TAG, "getStaticStatuses: Failed to parse pixelfed-statuses.json", e)
+    /**
+     * `assets/pixelfed-statuses.json` (~1 MB), read and parsed at most once per process with the
+     * injected [gson]. Synchronized because the first access can come from either [Dispatchers.Default]
+     * or [Dispatchers.IO] depending on which path touches it first.
+     */
+    private val memoizedStaticStatuses: List<StatusItem> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        runCatching {
+            context.assets.open(STATIC_STATUSES_ASSET).use { input ->
+                gson.fromJson<List<StatusItem>>(input.reader(), STATIC_STATUS_LIST_TYPE)
+            } ?: emptyList()
+        }.getOrElse { error ->
+            Log.e(TAG, "getStaticStatuses: Failed to read/parse $STATIC_STATUSES_ASSET", error)
             emptyList()
         }
     }
 
+    /** The memoized asset contents; see [memoizedStaticStatuses] for the threading constraint. */
+    fun getStaticStatuses(): List<StatusItem> = memoizedStaticStatuses
+
     fun getDefaultStaticTags(): List<String> {
-        val statuses = getStaticStatuses()
-        return extractTopTagsFromStatuses(statuses, topCount = MAX_DISPLAYED_TAGS)
+        return extractTopTagsFromStatuses(memoizedStaticStatuses, topCount = MAX_DISPLAYED_TAGS)
     }
 
-    fun getDefaultStaticTagCounts(): List<TagCount> {
-        return extractTopTagCountsFromStatuses(getStaticStatuses(), topCount = MAX_DISPLAYED_TAGS)
+    suspend fun getDefaultStaticTagCounts(): List<TagCount> = withContext(Dispatchers.Default) {
+        extractTopTagCountsFromStatuses(memoizedStaticStatuses, topCount = MAX_DISPLAYED_TAGS)
     }
 
     fun getDefaultStaticCollections(): List<CollectionItem> {
@@ -335,15 +361,12 @@ class PixelfedRepository @Inject constructor(
         try {
             val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
             val authHeader = "Bearer $accessToken"
-            val verifyResp = api.verifyCredentials(authHeader)
-            if (verifyResp.isSuccessful) {
-                val accountId = verifyResp.body()?.getIdString()
-                if (!accountId.isNullOrBlank()) {
-                    val collectionsResp = api.getUserCollections(authHeader, accountId)
-                    if (collectionsResp.isSuccessful && collectionsResp.body() != null) {
-                        val collections = collectionsResp.body()!!
-                        return@withContext Result.success(if (collections.isNotEmpty()) collections else getDefaultStaticCollections())
-                    }
+            val accountId = requireAccountId(api, instanceUrl, accessToken).getOrNull()
+            if (accountId != null) {
+                val collectionsResp = api.getUserCollections(authHeader, accountId)
+                if (collectionsResp.isSuccessful && collectionsResp.body() != null) {
+                    val collections = collectionsResp.body()!!
+                    return@withContext Result.success(if (collections.isNotEmpty()) collections else getDefaultStaticCollections())
                 }
             }
             Result.success(getDefaultStaticCollections())
@@ -401,89 +424,104 @@ class PixelfedRepository @Inject constructor(
 
     suspend fun getUserTopTagsAndPosts(forceRefresh: Boolean = false): Result<TagsAndPosts> = withContext(Dispatchers.IO) {
         val instanceUrl = tokenManager.instanceUrl
+            ?: return@withContext Result.failure(Exception("Not logged in"))
         val accessToken = tokenManager.accessToken
 
-        if (instanceUrl == null) {
-            return@withContext Result.failure(Exception("Not logged in"))
-        }
-
-        // Try to fetch from API if forceRefresh is true or we don't have enough data
-        val apiResult = if (!accessToken.isNullOrBlank() && (forceRefresh || !tokenManager.isLoggedIn())) {
-            fetchFromApi(instanceUrl, accessToken)
+        val finalStatuses = if (accessToken.isNullOrBlank()) {
+            readCachedStatuses(instanceUrl)
         } else {
-            Result.failure(Exception("Skipping API fetch"))
+            loadStatuses(instanceUrl, accessToken, forceRefresh)
         }
-
-        val finalStatuses = apiResult.fold(
-            onSuccess = { it },
-            onFailure = { error ->
-                Log.e(TAG, "getUserTopTagsAndPosts: API fetch failed/skipped, trying Room", error)
-                // Try Room
-                val cached = try {
-                    statusDao.getStatuses(instanceUrl).map { entity ->
-                        StatusItem(
-                            id = com.google.gson.JsonPrimitive(entity.id),
-                            content = entity.content,
-                            text = entity.text,
-                            description = entity.description
-                        )
-                    }
-                } catch (e: Exception) {
-                    emptyList<StatusItem>()
-                }
-                
-                if (cached.isNotEmpty()) {
-                    cached
-                } else {
-                    Log.d(TAG, "getUserTopTagsAndPosts: Room empty, falling back to static statuses")
-                    getStaticStatuses()
-                }
-            }
-        )
 
         val topTags = extractTopTagCountsFromStatuses(finalStatuses, topCount = MAX_DISPLAYED_TAGS)
         Result.success(TagsAndPosts(topTags = topTags, statuses = finalStatuses))
     }
 
-    private suspend fun fetchFromApi(instanceUrl: String, accessToken: String): Result<List<StatusItem>> {
-        return try {
-            val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
-            val authHeader = "Bearer $accessToken"
+    /**
+     * Single-flight read-through for the status list. Only a forced call or an expired
+     * [STATUS_REFRESH_TTL_MS] reaches the network; everyone else waits on [refreshMutex] and then
+     * serves Room/bundled data. [lastRefreshAtMs] advances on a failed attempt too, so a burst of
+     * callers does not retry a broken endpoint — a forced refresh (pull-to-refresh) always does.
+     */
+    private suspend fun loadStatuses(
+        instanceUrl: String,
+        accessToken: String,
+        forceRefresh: Boolean
+    ): List<StatusItem> = refreshMutex.withLock {
+        if (lastRefreshInstanceUrl != instanceUrl) {
+            lastRefreshInstanceUrl = instanceUrl
+            lastRefreshAtMs = 0L
+        }
+        if (!shouldRefreshStatuses(forceRefresh, lastRefreshAtMs, System.currentTimeMillis())) {
+            return@withLock readCachedStatuses(instanceUrl)
+        }
+        lastRefreshAtMs = System.currentTimeMillis()
+        fetchFromApi(instanceUrl, accessToken).getOrElse { error ->
+            Log.w(TAG, "getUserTopTagsAndPosts: API fetch failed, using cached statuses", error)
+            readCachedStatuses(instanceUrl)
+        }
+    }
 
-            val verifyResponse = api.verifyCredentials(authHeader)
-            if (verifyResponse.isSuccessful) {
-                val accountId = verifyResponse.body()?.getIdString()
-                if (accountId != null) {
-                    val statusesResponse = api.getUserStatuses(authHeader, accountId, limit = 40)
-                    if (statusesResponse.isSuccessful) {
-                        val statuses = statusesResponse.body() ?: emptyList()
-                        if (statuses.isNotEmpty()) {
-                            // Save to Room
-                            val entities = statuses.mapNotNull { item ->
-                                val id = item.getIdString() ?: return@mapNotNull null
-                                StatusEntity(
-                                    id = id,
-                                    content = item.content,
-                                    text = item.text,
-                                    description = item.description,
-                                    createdAt = System.currentTimeMillis(),
-                                    instanceUrl = instanceUrl
-                                )
-                            }
-                            statusDao.insertStatuses(entities)
-                            Result.success(statuses)
-                        } else {
-                            Result.failure(Exception("API returned no statuses"))
-                        }
-                    } else {
-                        Result.failure(Exception("Failed to fetch statuses: ${statusesResponse.code()}"))
-                    }
-                } else {
-                    Result.failure(Exception("Failed to get account ID"))
-                }
-            } else {
-                Result.failure(Exception("Failed to verify credentials: ${verifyResponse.code()}"))
+    /** Room first, then the bundled asset; both reads stay off the main thread. */
+    private suspend fun readCachedStatuses(instanceUrl: String): List<StatusItem> {
+        val cached = try {
+            statusDao.getStatuses(instanceUrl).map { it.toItem(gson) }
+        } catch (e: Exception) {
+            Log.e(TAG, "getUserTopTagsAndPosts: Room read failed", e)
+            emptyList()
+        }
+        if (cached.isNotEmpty()) return cached
+        Log.d(TAG, "getUserTopTagsAndPosts: status cache empty, using static statuses")
+        return getStaticStatuses()
+    }
+
+    /**
+     * The account id behind `verify_credentials`, resolved once per instance+token instead of once
+     * per call/page. The mutex keeps two concurrent bootstrap callers from both resolving it.
+     */
+    private suspend fun requireAccountId(
+        api: PixelfedApi,
+        instanceUrl: String,
+        accessToken: String
+    ): Result<String> {
+        accountIdCache.get(instanceUrl, accessToken)?.let { return Result.success(it) }
+        return accountIdMutex.withLock {
+            accountIdCache.get(instanceUrl, accessToken)?.let { return@withLock Result.success(it) }
+            val verified = try {
+                api.verifyCredentials("Bearer $accessToken")
+            } catch (e: Exception) {
+                return@withLock Result.failure(e)
             }
+            if (!verified.isSuccessful) {
+                return@withLock Result.failure(Exception("Failed to verify credentials: ${verified.code()}"))
+            }
+            val accountId = verified.body()?.getIdString()?.takeIf { it.isNotBlank() }
+                ?: return@withLock Result.failure(Exception("Failed to get account ID"))
+            accountIdCache.put(instanceUrl, accessToken, accountId)
+            Result.success(accountId)
+        }
+    }
+
+    private suspend fun persistStatuses(statuses: List<StatusItem>, instanceUrl: String) {
+        val fetchedAt = System.currentTimeMillis()
+        val entities = statuses.mapNotNull { it.toEntity(instanceUrl, fetchedAt, gson) }
+        if (entities.isNotEmpty()) statusDao.insertStatuses(entities)
+    }
+
+    private suspend fun fetchFromApi(instanceUrl: String, accessToken: String): Result<List<StatusItem>> {
+        val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
+        val accountId = requireAccountId(api, instanceUrl, accessToken).getOrElse { return Result.failure(it) }
+        return try {
+            val statusesResponse = api.getUserStatuses("Bearer $accessToken", accountId, limit = 40)
+            if (!statusesResponse.isSuccessful) {
+                return Result.failure(Exception("Failed to fetch statuses: ${statusesResponse.code()}"))
+            }
+            val statuses = statusesResponse.body() ?: emptyList()
+            if (statuses.isEmpty()) {
+                return Result.failure(Exception("API returned no statuses"))
+            }
+            persistStatuses(statuses, instanceUrl)
+            Result.success(statuses)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -498,20 +536,14 @@ class PixelfedRepository @Inject constructor(
 
         try {
             val api = getRetrofit(instanceUrl).create(PixelfedApi::class.java)
-            val authHeader = "Bearer $accessToken"
-            val accountId = api.verifyCredentials(authHeader).body()?.getIdString()
-                ?: return@withContext Result.failure(Exception("Failed to get account ID"))
-            val response = api.getUserStatuses(authHeader, accountId, limit = 40, maxId = maxId)
+            val accountId = requireAccountId(api, instanceUrl, accessToken)
+                .getOrElse { return@withContext Result.failure(it) }
+            val response = api.getUserStatuses("Bearer $accessToken", accountId, limit = 40, maxId = maxId)
             if (!response.isSuccessful) {
                 return@withContext Result.failure(Exception("Failed to fetch more statuses: ${response.code()}"))
             }
             val statuses = response.body().orEmpty()
-            val entities = statuses.mapNotNull { item ->
-                item.getIdString()?.let { id ->
-                    StatusEntity(id, item.content, item.text, item.description, System.currentTimeMillis(), instanceUrl)
-                }
-            }
-            if (entities.isNotEmpty()) statusDao.insertStatuses(entities)
+            persistStatuses(statuses, instanceUrl)
             Result.success(statuses)
         } catch (e: Exception) {
             Result.failure(e)
@@ -589,6 +621,20 @@ class PixelfedRepository @Inject constructor(
 
     companion object {
         private const val TAG = "PixelfedRepository"
+        private const val STATIC_STATUSES_ASSET = "pixelfed-statuses.json"
+
+        /** How long a status refresh is considered current; a forced refresh ignores it. */
+        const val STATUS_REFRESH_TTL_MS = 5 * 60_000L
+
+        private val STATIC_STATUS_LIST_TYPE = object : TypeToken<List<StatusItem>>() {}.type
+
+        /** The refresh decision for [getUserTopTagsAndPosts]; `lastRefreshAtMs` of 0 always refreshes. */
+        fun shouldRefreshStatuses(
+            forceRefresh: Boolean,
+            lastRefreshAtMs: Long,
+            nowMs: Long,
+            ttlMs: Long = STATUS_REFRESH_TTL_MS
+        ): Boolean = forceRefresh || nowMs - lastRefreshAtMs >= ttlMs
 
         fun extractTagsFromPostsText(text: String): List<String> {
             return Regex("""#([\p{L}\p{N}_-]+)""")

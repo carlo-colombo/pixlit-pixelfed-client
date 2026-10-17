@@ -22,7 +22,12 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "pixlit_db"
-        ).build()
+        )
+            // The statuses table is a disposable cache: on a schema change, recreate it instead of
+            // migrating rows. Room 2.8 only offers the argument form (`dropAllTables`), so the call
+            // is positional: true drops every table in this single-table database.
+            .fallbackToDestructiveMigration(true)
+            .build()
     }
 
     @Provides
