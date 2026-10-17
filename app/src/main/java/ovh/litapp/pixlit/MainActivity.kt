@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -44,11 +45,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        if (android.os.Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
-        }
-        reminderScheduler.scheduleAll()
+        // POST_NOTIFICATIONS is requested in context when a reminder is enabled (Settings tab),
+        // never on cold start. Scheduling is best-effort so a stale reminder time cannot crash startup.
+        runCatching { reminderScheduler.scheduleAll() }
+            .onFailure { Log.w("MainActivity", "Failed to schedule art-show reminders on startup", it) }
 
         viewModel.handleIntent(intent)
         val activity = this

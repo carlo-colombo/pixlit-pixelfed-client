@@ -104,6 +104,21 @@ class ReminderSchedulerTest {
         assertEquals(LocalTime.of(0, 0), preferences.saturday)
     }
 
+    @Test fun `scheduleAll tolerates out of range stored times`() {
+        context.getSharedPreferences("pixlit_reminders", Context.MODE_PRIVATE).edit()
+            .putInt("friday_hour", 99).putInt("friday_minute", 99)
+            .putInt("saturday_hour", 99).putInt("saturday_minute", 99)
+            .commit()
+
+        val scheduler = ReminderScheduler(context, preferences)
+
+        // A corrupt stored time must not escape as DateTimeException, and both reminders must still
+        // be scheduled from the clamped values.
+        scheduler.scheduleAll()
+        val alarms = Shadows.shadowOf(context.getSystemService(AlarmManager::class.java))
+        assertEquals(2, alarms.scheduledAlarms.size)
+    }
+
     @Test fun `worker posts an untitled fallback notification when the theme fetch fails`() = runTest {
         val repository = mockk<BlueskyArtShowRepository>()
         coEvery { repository.fetchTheme() } throws IOException("offline")
