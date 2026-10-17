@@ -4,18 +4,15 @@ import android.content.Context
 import android.net.Uri
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
-import app.cash.turbine.test
+import androidx.lifecycle.SavedStateHandle
+import com.google.gson.JsonPrimitive
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
-import ovh.litapp.pixlit.data.api.CollectionItem
-import ovh.litapp.pixlit.data.api.PlaceItem
-import ovh.litapp.pixlit.data.api.StatusItem
-import ovh.litapp.pixlit.data.api.StatusResponse
-import com.google.gson.JsonPrimitive
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -23,8 +20,16 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import ovh.litapp.pixlit.data.Fetch
+import ovh.litapp.pixlit.data.api.CollectionItem
+import ovh.litapp.pixlit.data.api.PlaceItem
+import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.repository.PixelfedRepository
 import ovh.litapp.pixlit.data.repository.TagCount
+import ovh.litapp.pixlit.data.work.UploadJob
+import ovh.litapp.pixlit.data.work.UploadJobState
+import ovh.litapp.pixlit.data.work.UploadJobStatus
+import ovh.litapp.pixlit.data.work.UploadScheduler
 
 @RunWith(RobolectricTestRunner::class)
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -33,19 +38,16 @@ class UploadViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private val repository = mockk<PixelfedRepository>(relaxed = true)
     private val context = mockk<Context>(relaxed = true)
-    
+    private val uploadScheduler = mockk<UploadScheduler>(relaxed = true)
+
     private lateinit var viewModel: UploadViewModel
 
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         every { repository.getDefaultStaticTags() } returns listOf("#tag1", "#tag2")
-        every { repository.getDefaultStaticCollections() } returns listOf(
-            CollectionItem(id = JsonPrimitive("col1"), title = "Collection 1"),
-            CollectionItem(id = JsonPrimitive("col2"), title = "Collection 2")
-        )
         coEvery { repository.getUserTopTagsAndPosts(any()) } answers {
-            Result.success(
+            Fetch.Fresh(
                 PixelfedRepository.TagsAndPosts(
                     listOf(
                         TagCount("tag1", 2),
@@ -55,13 +57,19 @@ class UploadViewModelTest {
                 )
             )
         }
-        coEvery { repository.getUserCollections() } returns Result.success(
+        coEvery { repository.getUserCollections() } returns Fetch.Fresh(
             listOf(
                 CollectionItem(id = JsonPrimitive("col1"), title = "Collection 1"),
                 CollectionItem(id = JsonPrimitive("col2"), title = "Collection 2")
             )
         )
-        viewModel = UploadViewModel(context, repository)
+        // The upload itself runs in WorkManager; the ViewModel only enqueues and observes, so the
+        // tests drive the observed job state directly.
+        every { uploadScheduler.observe(any()) } returns flowOf(
+            UploadJobState(UploadJobStatus.Running, uploadedCount = 1, totalCount = 1),
+            UploadJobState(UploadJobStatus.Succeeded, uploadedCount = 1, totalCount = 1)
+        )
+        viewModel = UploadViewModel(context, repository, uploadScheduler, SavedStateHandle())
     }
 
     @After
@@ -166,7 +174,7 @@ class UploadViewModelTest {
     @Test
     fun `createAndSelectCollection creates and selects new collection`() = runTest {
         val newCol = CollectionItem(id = JsonPrimitive("new_1"), title = "Architecture")
-        coEvery { repository.createCollection("Architecture", null) } returns Result.success(newCol)
+        coEvery { repository.createCollection("Architecture", null) } returns Fetch.Fresh(newCol)
 
         viewModel.createAndSelectCollection("Architecture")
         advanceUntilIdle()
@@ -176,41 +184,31 @@ class UploadViewModelTest {
     }
 
     @Test
-    fun `upload passes selected collection IDs to repository`() = runTest {
+    fun `upload enqueues the selected collection IDs and clears the draft on success`() = runTest {
         val uri1 = mockk<Uri>(relaxed = true)
         viewModel.addImages(listOf(uri1))
         viewModel.toggleCollectionSelection("col1")
         viewModel.toggleCollectionSelection("col2")
 
-        coEvery {
-            repository.uploadPhotosAndCreateStatus(
-                imageUris = any(),
-                caption = any(),
-                resizeTo8Mb = any(),
-                collectionIds = any(),
-                placeId = any()
-            )
-        } returns Result.success(StatusResponse(id = JsonPrimitive("123")))
-
         viewModel.upload()
         advanceUntilIdle()
 
-        coVerify {
-            repository.uploadPhotosAndCreateStatus(
-                imageUris = listOf(uri1),
-                caption = "",
-                resizeTo8Mb = false,
-                collectionIds = match { it.containsAll(listOf("col1", "col2")) && it.size == 2 },
-                placeId = null
-            )
-        }
+        val enqueued = mutableListOf<UploadJob>()
+        coVerify { uploadScheduler.enqueue(capture(enqueued)) }
+        val job = enqueued.single()
+        assertEquals(listOf(uri1.toString()), job.imageUris)
+        assertEquals("", job.caption)
+        assertEquals(false, job.resizeTo8Mb)
+        assertEquals(setOf("col1", "col2"), job.collectionIds.toSet())
+        assertEquals(null, job.placeId)
         assertEquals(emptySet<String>(), viewModel.selectedCollectionIds.value)
+        assertEquals(false, viewModel.isUploading.value)
     }
 
     @Test
     fun `refreshRecentPosts reloads statuses and updates refreshing state`() = runTest {
         val updatedStatus = StatusItem(id = JsonPrimitive("999"), content = "Refreshed post")
-        coEvery { repository.getUserTopTagsAndPosts(forceRefresh = true) } returns Result.success(
+        coEvery { repository.getUserTopTagsAndPosts(forceRefresh = true) } returns Fetch.Fresh(
             PixelfedRepository.TagsAndPosts(
                 topTags = listOf(TagCount("refreshedTag", 5)),
                 statuses = listOf(updatedStatus)
@@ -262,7 +260,7 @@ class UploadViewModelTest {
     @Test
     fun `onPlaceSearchQueryChanged performs debounced place search`() = runTest {
         val places = listOf(PlaceItem(id = JsonPrimitive("p10"), name = "Florence", country = "Italy"))
-        coEvery { repository.searchPlaces(query = "Flor", lat = null, lng = null) } returns Result.success(places)
+        coEvery { repository.searchPlaces(query = "Flor", lat = null, lng = null) } returns Fetch.Fresh(places)
 
         viewModel.onPlaceSearchQueryChanged("Flor")
         advanceTimeBy(301)
@@ -272,34 +270,22 @@ class UploadViewModelTest {
     }
 
     @Test
-    fun `upload with selected place passes placeId to repository`() = runTest {
+    fun `upload with selected place enqueues the placeId`() = runTest {
         val uri1 = mockk<Uri>(relaxed = true)
         viewModel.addImages(listOf(uri1))
 
         val place = PlaceItem(id = JsonPrimitive("place_99"), name = "Naples")
         viewModel.selectPlace(place)
 
-        coEvery {
-            repository.uploadPhotosAndCreateStatus(
-                imageUris = any(),
-                caption = any(),
-                resizeTo8Mb = any(),
-                collectionIds = any(),
-                placeId = any()
-            )
-        } returns Result.success(StatusResponse(id = JsonPrimitive("status_123")))
-
         viewModel.upload()
         advanceUntilIdle()
 
-        coVerify {
-            repository.uploadPhotosAndCreateStatus(
-                imageUris = listOf(uri1),
-                caption = "",
-                resizeTo8Mb = false,
-                collectionIds = emptyList(),
-                placeId = "place_99"
-            )
-        }
+        val enqueued = mutableListOf<UploadJob>()
+        coVerify { uploadScheduler.enqueue(capture(enqueued)) }
+        val job = enqueued.single()
+        assertEquals(listOf(uri1.toString()), job.imageUris)
+        assertEquals("", job.caption)
+        assertEquals(emptyList<String>(), job.collectionIds)
+        assertEquals("place_99", job.placeId)
     }
 }

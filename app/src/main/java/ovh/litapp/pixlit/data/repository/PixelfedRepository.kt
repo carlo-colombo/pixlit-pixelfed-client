@@ -6,21 +6,29 @@ import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import ovh.litapp.pixlit.data.Fetch
+import ovh.litapp.pixlit.data.NotLoggedInException
 import ovh.litapp.pixlit.data.api.CollectionItem
 import ovh.litapp.pixlit.data.api.PixelfedApiFactory
+import ovh.litapp.pixlit.data.api.PlaceItem
 import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.api.StatusResponse
+import ovh.litapp.pixlit.data.asPixelfedHttpException
 import ovh.litapp.pixlit.data.auth.OAuthParsers
 import ovh.litapp.pixlit.data.auth.TokenManager
 import ovh.litapp.pixlit.data.media.MediaUploader
+import ovh.litapp.pixlit.data.media.PhotoUploadStep
+import ovh.litapp.pixlit.data.media.PreparedImage
 import ovh.litapp.pixlit.data.session.SessionRepository
 import ovh.litapp.pixlit.data.status.StatusCache
 import ovh.litapp.pixlit.data.status.StatusRemoteSource
 import ovh.litapp.pixlit.data.tags.TagAggregator
 import ovh.litapp.pixlit.data.tags.TagSearchCache
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -52,35 +60,49 @@ class PixelfedRepository @Inject constructor(
     suspend fun exchangeCodeForToken(code: String, redirectUri: String): Result<String> =
         sessionRepository.exchangeCodeForToken(code, redirectUri)
 
-    suspend fun uploadPhotoAndCreateStatus(
-        imageUri: Uri,
-        caption: String,
-        resizeTo8Mb: Boolean = false,
-        collectionIds: List<String> = emptyList(),
-        placeId: String? = null
-    ): Result<StatusResponse> {
-        return mediaUploader.uploadPhotoAndCreateStatus(imageUri, caption, resizeTo8Mb, collectionIds, placeId)
-    }
-
+    /**
+     * The upload seam the worker calls (UP-05). The ViewModel no longer uploads: it enqueues an
+     * `UploadJob` and observes it. [idempotencyKey] is that job's id, so a retried post is
+     * deduplicated by the server, and [alreadyUploaded] carries the media ids a previous attempt
+     * already uploaded so they are not sent twice.
+     */
     suspend fun uploadPhotosAndCreateStatus(
         imageUris: List<Uri>,
         caption: String,
         resizeTo8Mb: Boolean = false,
         collectionIds: List<String> = emptyList(),
-        placeId: String? = null
-    ): Result<StatusResponse> {
-        return mediaUploader.uploadPhotosAndCreateStatus(imageUris, caption, resizeTo8Mb, collectionIds, placeId)
-    }
+        placeId: String? = null,
+        altTexts: Map<Uri, String> = emptyMap(),
+        idempotencyKey: String,
+        alreadyUploaded: List<String?> = emptyList(),
+        onPhotoUploaded: suspend (PhotoUploadStep) -> Unit = {}
+    ): Result<StatusResponse> = mediaUploader.uploadPhotosAndCreateStatus(
+        imageUris = imageUris,
+        caption = caption,
+        resizeTo8Mb = resizeTo8Mb,
+        collectionIds = collectionIds,
+        placeId = placeId,
+        altTexts = altTexts,
+        idempotencyKey = idempotencyKey,
+        alreadyUploaded = alreadyUploaded,
+        onPhotoUploaded = onPhotoUploaded
+    )
+
+    /**
+     * The one prepared file for ([uri], [resize]) (UP-08), shared by the preview and the upload so
+     * the photo is decoded and encoded once. The worker uploads and deletes it; a preview that is
+     * never uploaded leaves it to the upload cache sweep (UP-07).
+     */
+    suspend fun prepareImage(uri: Uri, resize: Boolean): Result<PreparedImage> =
+        mediaUploader.prepareImage(uri, resize)
 
     suspend fun searchPlaces(
         query: String? = null,
         lat: Double? = null,
         lng: Double? = null
-    ): Result<List<ovh.litapp.pixlit.data.api.PlaceItem>> = withContext(Dispatchers.IO) {
-        val instanceUrl = tokenManager.instanceUrl
-            ?: return@withContext Result.failure(Exception("Not logged in"))
-        val accessToken = tokenManager.accessToken
-            ?: return@withContext Result.failure(Exception("Not logged in"))
+    ): Fetch<List<PlaceItem>> = withContext(Dispatchers.IO) {
+        val instanceUrl = tokenManager.instanceUrl ?: return@withContext Fetch.Failed(NotLoggedInException())
+        val accessToken = tokenManager.accessToken ?: return@withContext Fetch.Failed(NotLoggedInException())
         try {
             val api = apiFactory.get(instanceUrl)
             val response = withTimeoutOrNull(8_000L) {
@@ -90,15 +112,19 @@ class PixelfedRepository @Inject constructor(
                     lat = lat,
                     lng = lng
                 )
-            } ?: return@withContext Result.failure(Exception("Place search timed out"))
-            if (response.isSuccessful && response.body() != null) {
-                Result.success(response.body()!!)
+            } ?: return@withContext Fetch.Failed(IOException("Place search timed out"))
+            val places = response.body()
+            if (response.isSuccessful && places != null) {
+                // An empty list here is a real answer: the query genuinely matched no place.
+                Fetch.Fresh(places)
             } else {
-                Result.success(emptyList())
+                Fetch.Failed(response.asPixelfedHttpException("GET api/v1/places/search"))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "searchPlaces failed", e)
-            Result.failure(e)
+            Fetch.Failed(e)
         }
     }
 
@@ -123,9 +149,6 @@ class PixelfedRepository @Inject constructor(
         }
     }
 
-    /** The memoized asset contents; see [memoizedStaticStatuses] for the threading constraint. */
-    fun getStaticStatuses(): List<StatusItem> = memoizedStaticStatuses
-
     fun getDefaultStaticTags(): List<String> {
         return TagAggregator.extractTopTagsFromStatuses(memoizedStaticStatuses, topCount = TagAggregator.MAX_DISPLAYED_TAGS)
     }
@@ -134,94 +157,99 @@ class PixelfedRepository @Inject constructor(
         TagAggregator.extractTopTagCountsFromStatuses(memoizedStaticStatuses, topCount = TagAggregator.MAX_DISPLAYED_TAGS)
     }
 
-    fun getDefaultStaticCollections(): List<CollectionItem> {
-        return listOf(
-            CollectionItem(id = com.google.gson.JsonPrimitive("static_1"), title = "Portfolio"),
-            CollectionItem(id = com.google.gson.JsonPrimitive("static_2"), title = "Travel"),
-            CollectionItem(id = com.google.gson.JsonPrimitive("static_3"), title = "Favorites"),
-            CollectionItem(id = com.google.gson.JsonPrimitive("static_4"), title = "Art & Design")
-        )
-    }
-
-    suspend fun getUserCollections(): Result<List<CollectionItem>> = withContext(Dispatchers.IO) {
+    /**
+     * The account's collections. An empty list is a real answer ("you have none"), not a reason to
+     * fabricate placeholders (DATA-05 / UP-13): the previous static fallback produced `local_…` ids
+     * that 404ed silently on assignment while the UI reported the collection as added.
+     */
+    suspend fun getUserCollections(): Fetch<List<CollectionItem>> = withContext(Dispatchers.IO) {
         val instanceUrl = tokenManager.instanceUrl
         val accessToken = tokenManager.accessToken
 
         if (instanceUrl.isNullOrBlank() || accessToken.isNullOrBlank()) {
-            return@withContext Result.success(getDefaultStaticCollections())
+            return@withContext Fetch.Failed(NotLoggedInException())
         }
 
         try {
             val api = apiFactory.get(instanceUrl)
-            val authHeader = "Bearer $accessToken"
-            val accountId = statusRemoteSource.requireAccountId(api, instanceUrl, accessToken).getOrNull()
-            if (accountId != null) {
-                val collectionsResp = api.getUserCollections(authHeader, accountId)
-                if (collectionsResp.isSuccessful && collectionsResp.body() != null) {
-                    val collections = collectionsResp.body()!!
-                    return@withContext Result.success(if (collections.isNotEmpty()) collections else getDefaultStaticCollections())
-                }
+            val accountId = statusRemoteSource.requireAccountId(api, instanceUrl, accessToken)
+                .getOrElse { return@withContext Fetch.Failed(it) }
+            val response = api.getUserCollections("Bearer $accessToken", accountId)
+            val collections = response.body()
+            if (response.isSuccessful && collections != null) {
+                Fetch.Fresh(collections)
+            } else {
+                Fetch.Failed(response.asPixelfedHttpException("GET api/pixelfed/v1/accounts/$accountId/collections"))
             }
-            Result.success(getDefaultStaticCollections())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "getUserCollections failed, falling back to static collections", e)
-            Result.success(getDefaultStaticCollections())
+            Log.e(TAG, "getUserCollections failed", e)
+            Fetch.Failed(e)
         }
     }
 
+    /**
+     * Creates a collection on the server. A failure is reported as [Fetch.Failed] so the UI cannot
+     * show a collection that does not exist (DATA-05 / 04 F-11); there is no local fabrication.
+     */
     suspend fun createCollection(
         title: String,
         description: String? = null,
         visibility: String = "public"
-    ): Result<CollectionItem> = withContext(Dispatchers.IO) {
+    ): Fetch<CollectionItem> = withContext(Dispatchers.IO) {
         val instanceUrl = tokenManager.instanceUrl
         val accessToken = tokenManager.accessToken
 
         if (instanceUrl.isNullOrBlank() || accessToken.isNullOrBlank()) {
-            return@withContext Result.success(localCollection(title, description, visibility))
+            return@withContext Fetch.Failed(NotLoggedInException())
         }
 
         try {
             val api = apiFactory.get(instanceUrl)
-            val authHeader = "Bearer $accessToken"
-            val response = api.createCollection(authHeader, title, description, visibility)
-            if (response.isSuccessful && response.body() != null) {
-                Result.success(response.body()!!)
+            val response = api.createCollection("Bearer $accessToken", title, description, visibility)
+            val collection = response.body()
+            if (response.isSuccessful && collection != null) {
+                Fetch.Fresh(collection)
             } else {
-                Result.success(localCollection(title, description, visibility))
+                Fetch.Failed(response.asPixelfedHttpException("POST api/pixelfed/v1/collections"))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "createCollection failed, creating local fallback collection", e)
-            Result.success(localCollection(title, description, visibility))
+            Log.e(TAG, "createCollection failed", e)
+            Fetch.Failed(e)
         }
     }
 
-    private fun localCollection(title: String, description: String?, visibility: String): CollectionItem {
-        val localId = "local_${System.currentTimeMillis()}"
-        return CollectionItem(
-            id = com.google.gson.JsonPrimitive(localId),
-            title = title,
-            description = description,
-            visibility = visibility
-        )
-    }
+    /**
+     * Tags and recent posts, typed so the UI can tell "you have no posts" from "the read broke"
+     * (DATA-05 / 04 F-11). Room data served while the refresh failed is [Fetch.Cached]; the bundled
+     * asset is no longer substituted here, the ViewModel owns its own onboarding fallback.
+     */
+    suspend fun getUserTopTagsAndPosts(forceRefresh: Boolean = false): Fetch<TagsAndPosts> =
+        withContext(Dispatchers.IO) {
+            val instanceUrl = tokenManager.instanceUrl ?: return@withContext Fetch.Failed(NotLoggedInException())
+            val accessToken = tokenManager.accessToken
 
-    suspend fun getUserTopTagsAndPosts(forceRefresh: Boolean = false): Result<TagsAndPosts> = withContext(Dispatchers.IO) {
-        val instanceUrl = tokenManager.instanceUrl
-            ?: return@withContext Result.failure(Exception("Not logged in"))
-        val accessToken = tokenManager.accessToken
-
-        val statuses = (
-            if (accessToken.isNullOrBlank()) {
-                readCachedStatuses(instanceUrl)
+            val statuses = if (accessToken.isNullOrBlank()) {
+                val cached = readCachedStatuses(instanceUrl)
+                if (cached.isEmpty()) return@withContext Fetch.Failed(NotLoggedInException())
+                Fetch.Fresh(cached)
             } else {
                 statusRemoteSource.loadStatuses(instanceUrl, accessToken, forceRefresh)
             }
-            ).ifEmpty { getStaticStatuses() }
 
-        val topTags = TagAggregator.extractTopTagCountsFromStatuses(statuses, topCount = TagAggregator.MAX_DISPLAYED_TAGS)
-        Result.success(TagsAndPosts(topTags = topTags, statuses = statuses))
-    }
+            statuses.map { statusList ->
+                TagsAndPosts(
+                    topTags = TagAggregator.extractTopTagCountsFromStatuses(
+                        statusList,
+                        topCount = TagAggregator.MAX_DISPLAYED_TAGS
+                    ),
+                    statuses = statusList
+                )
+            }
+        }
 
     suspend fun getMoreUserStatuses(maxId: String): Result<List<StatusItem>> {
         val instanceUrl = tokenManager.instanceUrl

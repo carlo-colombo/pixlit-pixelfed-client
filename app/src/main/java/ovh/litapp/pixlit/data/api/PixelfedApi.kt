@@ -9,6 +9,7 @@ import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.HeaderMap
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
@@ -62,6 +63,8 @@ interface PixelfedApi {
     @POST("api/v1/statuses")
     suspend fun createStatus(
         @Header("Authorization") authHeader: String,
+        // Carries `Idempotency-Key` (UP-05): a retried post must not create a duplicate status.
+        @HeaderMap headers: Map<String, String> = emptyMap(),
         @Field("status") status: String,
         @Field("media_ids[]") mediaIds: List<String>,
         @Field("place_id") placeId: String? = null
