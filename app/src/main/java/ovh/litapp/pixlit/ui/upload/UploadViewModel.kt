@@ -225,6 +225,10 @@ class UploadViewModel @Inject constructor(
         }
     }
 
+    /**
+     * [_isSearchingPlaces] flips to `true` before the debounce delay so the composable's
+     * "Use … as location name" fallback stays hidden while the user is typing.
+     */
     fun onPlaceSearchQueryChanged(query: String) {
         _placeSearchQuery.value = query
         placeSearchJob?.cancel()
@@ -233,9 +237,9 @@ class UploadViewModel @Inject constructor(
             _isSearchingPlaces.value = false
             return
         }
+        _isSearchingPlaces.value = true
         placeSearchJob = viewModelScope.launch {
             kotlinx.coroutines.delay(300)
-            _isSearchingPlaces.value = true
             val result = repository.searchPlaces(query = query.trim())
             result.fold(
                 onSuccess = { places ->
