@@ -32,7 +32,9 @@ fun OrderPreviewList(
     modifier: Modifier = Modifier
 ) {
     val screenWidthDp = LocalConfiguration.current.screenWidthDp.dp
-    val thumbnailSize = screenWidthDp * 0.15f
+    // Keep the proportional thumbnail but never shrink the touch target below
+    // the 56 dp minimum (0.15 * 360 dp was only ~54 dp).
+    val thumbnailSize = (screenWidthDp * 0.15f).coerceAtLeast(56.dp)
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
@@ -45,7 +47,7 @@ fun OrderPreviewList(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            itemsIndexed(selectedImageUris) { index, uri ->
+            itemsIndexed(selectedImageUris, key = { _, uri -> uri }) { index, uri ->
                 val isFocused = index == currentPage
                 Box(
                     modifier = Modifier

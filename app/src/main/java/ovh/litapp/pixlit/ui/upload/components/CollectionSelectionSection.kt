@@ -13,6 +13,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import ovh.litapp.pixlit.data.api.CollectionItem
 
+/**
+ * Collection picker with an inline create dialog.
+ *
+ * [onCreateCollection] is fire-and-forget, so the dialog must not dismiss on the
+ * Create tap itself: dismissal is driven by the collection list gaining the new
+ * item (UploadViewModel.createAndSelectCollection prepends and selects it only on
+ * success). A failed create therefore leaves the dialog open with the typed input
+ * intact so the user can retry.
+ *
+ * Note for the ViewModel owner: nothing surfaces the failure to the user yet.
+ * Once the typed create result exists (DATA-05), report it back and show an error
+ * message (UX-03 snackbar) instead of relying on the list change alone.
+ */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun CollectionSelectionSection(
@@ -26,6 +39,21 @@ fun CollectionSelectionSection(
     var showCreateDialog by remember { mutableStateOf(false) }
     var newTitle by remember { mutableStateOf("") }
     var newDescription by remember { mutableStateOf("") }
+    // Set by the Create tap; cleared only when the new collection shows up in
+    // [collections]. Keeps the dialog keyed to the pending create rather than the tap.
+    var isCreatePending by remember { mutableStateOf(false) }
+    var collectionIdsBeforeCreate by remember { mutableStateOf(emptySet<String>()) }
+
+    LaunchedEffect(collections, isCreatePending) {
+        if (!isCreatePending) return@LaunchedEffect
+        val currentIds = collections.mapNotNull { it.getIdString() }.toSet()
+        if (currentIds.any { it !in collectionIdsBeforeCreate }) {
+            isCreatePending = false
+            showCreateDialog = false
+            newTitle = ""
+            newDescription = ""
+        }
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -96,6 +124,7 @@ fun CollectionSelectionSection(
                 showCreateDialog = false
                 newTitle = ""
                 newDescription = ""
+                isCreatePending = false
             },
             title = { Text("Create New Collection") },
             text = {
@@ -119,10 +148,9 @@ fun CollectionSelectionSection(
                 Button(
                     onClick = {
                         if (newTitle.isNotBlank()) {
+                            collectionIdsBeforeCreate = collections.mapNotNull { it.getIdString() }.toSet()
+                            isCreatePending = true
                             onCreateCollection(newTitle, newDescription.ifBlank { null })
-                            showCreateDialog = false
-                            newTitle = ""
-                            newDescription = ""
                         }
                     },
                     enabled = newTitle.isNotBlank()
@@ -136,6 +164,7 @@ fun CollectionSelectionSection(
                         showCreateDialog = false
                         newTitle = ""
                         newDescription = ""
+                        isCreatePending = false
                     }
                 ) {
                     Text("Cancel")
