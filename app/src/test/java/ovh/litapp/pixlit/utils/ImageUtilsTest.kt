@@ -174,4 +174,39 @@ class ImageUtilsTest {
         // Resized bitmap should be rotated to portrait (height > width)
         assertTrue(resizedMetadata!!.height > resizedMetadata.width)
     }
+
+    @Test
+    fun testOversizedSourceDecodesWithinPixelBound() {
+        // 16 MP source, above the 12 MP decode cap: the raw byte-size ratio (~0.58) cannot be
+        // expressed as a power-of-two inSampleSize, so the classic halving loop would decode
+        // the full 16 MP (UP-01 regression).
+        val file = createTestImageFile(4000, 4000, "oversized.jpg")
+        val uri = Uri.fromFile(file)
+
+        val decoded = ImageUtils.decodeBoundedBitmap(context, uri, 4000, 4000)
+
+        assertNotNull(decoded)
+        val pixels = decoded!!.width.toLong() * decoded.height.toLong()
+        assertTrue(
+            "decoded $pixels pixels should be <= ${ImageUtils.MAX_DECODE_PIXELS}",
+            pixels <= ImageUtils.MAX_DECODE_PIXELS
+        )
+        decoded.recycle()
+    }
+
+    @Test
+    fun testResizeImageDownToMaxBytesOversizedSourceDoesNotThrow() {
+        val file = createTestImageFile(4000, 4000, "oversized_resize.jpg")
+        val uri = Uri.fromFile(file)
+        // Force the resize branch regardless of how small the synthetic JPEG compresses.
+        val maxBytes = (file.length() / 2).coerceAtLeast(1L)
+
+        val resizedFile = ImageUtils.resizeImageDownToMaxBytes(context, uri, maxSizeBytes = maxBytes)
+
+        assertNotNull(resizedFile)
+        assertTrue("resized length (${resizedFile!!.length()}) should be <= $maxBytes", resizedFile.length() <= maxBytes)
+        val resizedMetadata = ImageUtils.getFileMetadata(resizedFile)
+        assertNotNull(resizedMetadata)
+        assertTrue(resizedMetadata!!.width <= 4000 && resizedMetadata.height <= 4000)
+    }
 }
