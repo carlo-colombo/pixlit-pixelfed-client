@@ -25,6 +25,16 @@ import coil.compose.rememberAsyncImagePainter
 import ovh.litapp.pixlit.R
 import ovh.litapp.pixlit.ui.theme.PixlitTheme
 
+/**
+ * Stable LazyRow key for one selected image.
+ *
+ * The same photo can be picked more than once, so keying on the [Uri] alone throws
+ * "Key was already used". Appending the occurrence ordinal keeps distinct URIs keyed by their
+ * identity (stable across reordering) while still giving duplicates distinct keys.
+ */
+private fun thumbnailKey(uris: List<Uri>, index: Int, uri: Uri): String =
+    "${uri}#${uris.subList(0, index).count { it == uri }}"
+
 @Composable
 fun OrderPreviewList(
     selectedImageUris: List<Uri>,
@@ -49,7 +59,10 @@ fun OrderPreviewList(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            itemsIndexed(selectedImageUris, key = { _, uri -> uri }) { index, uri ->
+            itemsIndexed(
+                items = selectedImageUris,
+                key = { index, uri -> thumbnailKey(selectedImageUris, index, uri) }
+            ) { index, uri ->
                 val isFocused = index == currentPage
                 Box(
                     modifier = Modifier
