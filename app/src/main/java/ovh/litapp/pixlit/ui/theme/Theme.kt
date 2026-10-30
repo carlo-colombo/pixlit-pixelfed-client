@@ -42,12 +42,14 @@ private val LightColorScheme = lightColorScheme(
 fun PixlitTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     /**
-     * Material You wallpaper colors are deliberately off by default: minSdk is 34, so leaving this
-     * true would replace the Purple/Pink brand palette in Color.kt with the device wallpaper colors
-     * for every user. Flip it to true only as an explicit Material You opt-in; on API 31+ the
-     * `dynamic*ColorScheme` branches below are ready for it.
+     * Material You is on by default: the scheme is derived from the device accent/wallpaper colors
+     * so Pixlit matches the rest of the system. minSdk is 34 (>= API 31), so the
+     * `dynamic*ColorScheme` branches below are always available. This is a global switch, not a
+     * user preference: nothing in the app passes the flag, so every screen follows the system
+     * accent. Color.kt stays as the fallback scheme; previews can pass `dynamicColor = false` to
+     * render the brand palette instead of the host's accent.
      */
-    dynamicColor: Boolean = false,
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
