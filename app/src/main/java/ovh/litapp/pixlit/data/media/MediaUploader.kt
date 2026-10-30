@@ -1,7 +1,6 @@
 package ovh.litapp.pixlit.data.media
 
 import android.net.Uri
-import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -10,7 +9,7 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import ovh.litapp.pixlit.data.NotLoggedInException
-import ovh.litapp.pixlit.data.api.PixelfedApi
+import ovh.litapp.pixlit.data.api.MAX_COLLECTIONS_PER_POST
 import ovh.litapp.pixlit.data.api.PixelfedApiFactory
 import ovh.litapp.pixlit.data.api.StatusResponse
 import ovh.litapp.pixlit.data.asPixelfedHttpException
@@ -124,6 +123,11 @@ class MediaUploader @Inject constructor(
                 headers = mapOf(IDEMPOTENCY_HEADER to idempotencyKey),
                 status = caption,
                 mediaIds = mediaIds.filterNotNull(),
+                // Attached atomically by the status creator: no post-create "add" call can silently
+                // 404 while the UI still reports the post as collected. The server caps this array
+                // at 3 and would reject the whole post above that, so clamp defensively for drafts
+                // restored from an older build.
+                collectionIds = collectionIds.take(MAX_COLLECTIONS_PER_POST),
                 placeId = placeId
             )
             val createdStatus = statusResponse.body()
@@ -132,9 +136,8 @@ class MediaUploader @Inject constructor(
                     statusResponse.asPixelfedHttpException("POST api/v1/statuses")
                 )
             }
-            // The idempotency key covers the status itself; a repeat of this request returns the
-            // status the lost response would have carried instead of creating a duplicate.
-            attachToCollections(api, accessToken, createdStatus.getIdString(), collectionIds)
+            // The idempotency key covers the status and its collection attachments together, so a
+            // retried post is not duplicated and does not need a second attach request.
             Result.success(createdStatus)
         } catch (e: CancellationException) {
             // Cancelling an upload must propagate, not be reported as a failed upload (UP-13).
@@ -153,31 +156,7 @@ class MediaUploader @Inject constructor(
         altText?.trim()?.take(MAX_ALT_CHARS)?.takeIf { it.isNotEmpty() }
             ?.toRequestBody(TEXT_PLAIN_TYPE)
 
-    private suspend fun attachToCollections(
-        api: PixelfedApi,
-        accessToken: String,
-        statusId: String?,
-        collectionIds: List<String>
-    ) {
-        if (statusId.isNullOrBlank() || collectionIds.isEmpty()) return
-        for (collectionId in collectionIds) {
-            try {
-                api.addStatusToCollection(
-                    authHeader = "Bearer $accessToken",
-                    collectionId = collectionId,
-                    statusId = statusId
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to add status $statusId to collection $collectionId", e)
-            }
-        }
-    }
-
     companion object {
-        private const val TAG = "MediaUploader"
-
         /**
          * Defensive clamp on a media `description`. Pixelfed does not publish the media-description
          * limit in its API reference, and the server rejects an over-long one with a 4xx that lands

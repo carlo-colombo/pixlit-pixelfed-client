@@ -1,13 +1,11 @@
 package ovh.litapp.pixlit.ui.upload.components
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
@@ -16,50 +14,31 @@ import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
 import com.google.gson.JsonPrimitive
 import ovh.litapp.pixlit.data.api.CollectionItem
+import ovh.litapp.pixlit.data.api.MAX_COLLECTIONS_PER_POST
 import ovh.litapp.pixlit.ui.theme.PixlitTheme
 
 /**
- * Collection picker with an inline create dialog.
+ * Collection picker for the upload tab.
  *
- * [onCreateCollection] is fire-and-forget, so the dialog must not dismiss on the
- * Create tap itself: dismissal is driven by the collection list gaining the new
- * item (UploadViewModel.createAndSelectCollection prepends and selects it only on
- * success). A failed create therefore leaves the dialog open with the typed input
- * intact so the user can retry.
+ * Pixelfed exposes no API to create a collection: the web UI does it through a session-only
+ * `GET /i/collections/create` that `firstOrCreate`s a draft, and the OAuth API only has list,
+ * update, add-item and delete routes. The picker therefore lists existing collections and points
+ * the user at the web UI instead of offering a create action that would always 404.
  *
- * Note for the ViewModel owner: nothing surfaces the failure to the user yet.
- * Once the typed create result exists (DATA-05), report it back and show an error
- * message (UX-03 snackbar) instead of relying on the list change alone.
+ * A post can join at most [MAX_COLLECTIONS_PER_POST] collections: the status creator validates
+ * `collection_ids` as `max:3` and would reject the post itself above that. The ViewModel refuses a
+ * fourth selection; the hint here explains the limit.
  */
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CollectionSelectionSection(
     collections: List<CollectionItem>,
     selectedCollectionIds: Set<String>,
     isLoadingCollections: Boolean,
     onCollectionToggle: (String) -> Unit,
-    onCreateCollection: (String, String?) -> Unit,
+    onRefreshCollections: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showCreateDialog by remember { mutableStateOf(false) }
-    var newTitle by remember { mutableStateOf("") }
-    var newDescription by remember { mutableStateOf("") }
-    // Set by the Create tap; cleared only when the new collection shows up in
-    // [collections]. Keeps the dialog keyed to the pending create rather than the tap.
-    var isCreatePending by remember { mutableStateOf(false) }
-    var collectionIdsBeforeCreate by remember { mutableStateOf(emptySet<String>()) }
-
-    LaunchedEffect(collections, isCreatePending) {
-        if (!isCreatePending) return@LaunchedEffect
-        val currentIds = collections.mapNotNull { it.getIdString() }.toSet()
-        if (currentIds.any { it !in collectionIdsBeforeCreate }) {
-            isCreatePending = false
-            showCreateDialog = false
-            newTitle = ""
-            newDescription = ""
-        }
-    }
-
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -75,12 +54,32 @@ fun CollectionSelectionSection(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
-            if (isLoadingCollections) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isLoadingCollections) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                IconButton(
+                    onClick = onRefreshCollections,
+                    enabled = !isLoadingCollections
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh collections"
+                    )
+                }
             }
+        }
+
+        if (collections.isEmpty() && !isLoadingCollections) {
+            Text(
+                text = "No collections yet. Create one in Pixelfed on the web, then refresh.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         FlowRow(
@@ -88,19 +87,6 @@ fun CollectionSelectionSection(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Button to create a new collection
-            AssistChip(
-                onClick = { showCreateDialog = true },
-                label = { Text("New Collection") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Create collection",
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            )
-
             collections.forEach { collection ->
                 val id = collection.getIdString() ?: return@forEach
                 val isSelected = selectedCollectionIds.contains(id)
@@ -121,61 +107,14 @@ fun CollectionSelectionSection(
                 )
             }
         }
-    }
 
-    if (showCreateDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showCreateDialog = false
-                newTitle = ""
-                newDescription = ""
-                isCreatePending = false
-            },
-            title = { Text("Create New Collection") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = newTitle,
-                        onValueChange = { newTitle = it },
-                        label = { Text("Collection Title") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newDescription,
-                        onValueChange = { newDescription = it },
-                        label = { Text("Description (Optional)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newTitle.isNotBlank()) {
-                            collectionIdsBeforeCreate = collections.mapNotNull { it.getIdString() }.toSet()
-                            isCreatePending = true
-                            onCreateCollection(newTitle, newDescription.ifBlank { null })
-                        }
-                    },
-                    enabled = newTitle.isNotBlank()
-                ) {
-                    Text("Create & Select")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showCreateDialog = false
-                        newTitle = ""
-                        newDescription = ""
-                        isCreatePending = false
-                    }
-                ) {
-                    Text("Cancel")
-                }
-            }
-        )
+        if (collections.isNotEmpty()) {
+            Text(
+                text = "Up to $MAX_COLLECTIONS_PER_POST collections per post.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -200,7 +139,7 @@ fun CollectionSelectionSectionPreview(
             selectedCollectionIds = setOf("1"),
             isLoadingCollections = false,
             onCollectionToggle = {},
-            onCreateCollection = { _, _ -> },
+            onRefreshCollections = {},
             modifier = Modifier.padding(16.dp)
         )
     }

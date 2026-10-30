@@ -20,7 +20,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ovh.litapp.pixlit.data.Fetch
-import ovh.litapp.pixlit.data.api.CollectionItem
+import ovh.litapp.pixlit.data.api.MAX_COLLECTIONS_PER_POST
 import ovh.litapp.pixlit.data.api.PlaceItem
 import ovh.litapp.pixlit.data.api.StatusItem
 import ovh.litapp.pixlit.data.repository.CacheSummaryItem
@@ -313,6 +313,13 @@ class UploadViewModel @Inject constructor(
     }
 
     fun toggleCollectionSelection(collectionId: String) {
+        val selected = _uiState.value.selectedCollectionIds
+        if (collectionId !in selected && selected.size >= MAX_COLLECTIONS_PER_POST) {
+            // Pixelfed validates `collection_ids` as max:3 on status creation; a fourth selection
+            // would 422 the post, so it is refused here rather than failing at upload time.
+            warnOnce("A post can be added to at most $MAX_COLLECTIONS_PER_POST collections")
+            return
+        }
         _uiState.update { state ->
             val current = state.selectedCollectionIds.toMutableSet()
             if (current.contains(collectionId)) {
@@ -321,31 +328,6 @@ class UploadViewModel @Inject constructor(
                 current.add(collectionId)
             }
             state.copy(selectedCollectionIds = current)
-        }
-    }
-
-    fun createAndSelectCollection(title: String, description: String? = null) {
-        if (title.isBlank()) return
-        viewModelScope.launch {
-            // A failed creation is reported, never shown as a created collection (DATA-05).
-            val created = repository.createCollection(title.trim(), description?.trim()).valueOrNull()
-            if (created == null) {
-                reportError("Could not create the collection \"${title.trim()}\"")
-                return@launch
-            }
-            val id = created.getIdString()
-            _uiState.update { state ->
-                val currentCollections = state.userCollections.toMutableList()
-                if (id != null && currentCollections.none { it.getIdString() == id }) {
-                    currentCollections.add(0, created)
-                    state.copy(
-                        userCollections = currentCollections,
-                        selectedCollectionIds = state.selectedCollectionIds + id
-                    )
-                } else {
-                    state
-                }
-            }
         }
     }
 
@@ -791,7 +773,10 @@ class UploadViewModel @Inject constructor(
             _uiState.update { it.copy(resizeTo8Mb = resize) }
         }
         savedStateHandle.get<ArrayList<String>>(KEY_COLLECTION_IDS)?.let { ids ->
-            _uiState.update { it.copy(selectedCollectionIds = ids.toSet()) }
+            // A draft saved by an older build could hold more than the server accepts.
+            _uiState.update {
+                it.copy(selectedCollectionIds = ids.take(MAX_COLLECTIONS_PER_POST).toSet())
+            }
         }
         savedStateHandle.get<String>(KEY_CUSTOM_LOCATION)?.let { location ->
             _uiState.update { it.copy(customLocationName = location) }

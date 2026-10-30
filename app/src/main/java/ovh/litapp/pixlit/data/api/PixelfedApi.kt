@@ -16,6 +16,12 @@ import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 
+/**
+ * The status creator validates `collection_ids` as `array|max:3`; a fourth id would 422 the whole
+ * post, so the picker and the uploader both stop there.
+ */
+const val MAX_COLLECTIONS_PER_POST = 3
+
 interface PixelfedApi {
 
     @GET("api/v1/accounts/verify_credentials")
@@ -70,6 +76,10 @@ interface PixelfedApi {
         @HeaderMap headers: Map<String, String> = emptyMap(),
         @Field("status") status: String,
         @Field("media_ids[]") mediaIds: List<String>,
+        // The status is attached to these collections in the same request (see the Pixelfed
+        // `statusCreate` handle: `collection_ids` is validated as an array, max 3). This is the
+        // supported path; there is no separate "add to collection" call in the app any more.
+        @Field("collection_ids[]") collectionIds: List<String> = emptyList(),
         @Field("place_id") placeId: String? = null
     ): Response<StatusResponse>
 
@@ -89,28 +99,19 @@ interface PixelfedApi {
         @Query("limit") limit: Int = 20
     ): Response<HashtagSearchResponse>
 
-    @GET("api/pixelfed/v1/accounts/{id}/collections")
+    /**
+     * `GET /api/pixelfed/v1/collections/accounts/{id}` (also exposed under `/api/v1.1/...`).
+     *
+     * The path is `collections/accounts/{id}`, not `accounts/{id}/collections`: the latter was a
+     * 404 on every instance. The controller paginates at 9 and then maps the paginator's underlying
+     * collection, so the payload is a bare array with no page envelope; `page` is 1-based.
+     */
+    @GET("api/pixelfed/v1/collections/accounts/{id}")
     suspend fun getUserCollections(
         @Header("Authorization") authHeader: String,
-        @Path("id") accountId: String
+        @Path("id") accountId: String,
+        @Query("page") page: Int = 1
     ): Response<List<CollectionItem>>
-
-    @FormUrlEncoded
-    @POST("api/pixelfed/v1/collections/{id}/items")
-    suspend fun addStatusToCollection(
-        @Header("Authorization") authHeader: String,
-        @Path("id") collectionId: String,
-        @Field("status_id") statusId: String
-    ): Response<okhttp3.ResponseBody>
-
-    @FormUrlEncoded
-    @POST("api/pixelfed/v1/collections")
-    suspend fun createCollection(
-        @Header("Authorization") authHeader: String,
-        @Field("title") title: String,
-        @Field("description") description: String? = null,
-        @Field("visibility") visibility: String = "public"
-    ): Response<CollectionItem>
 }
 
 fun JsonElement?.toSafeString(): String? {
@@ -140,18 +141,26 @@ data class MediaResponse(
     fun getIdString(): String? = id.toSafeString()
 }
 
+/**
+ * One entry of `CollectionService::getCollection`, the payload both collection read endpoints
+ * return: snowflake `id`/`pid` as strings, `post_count` (not `posts_count`) and a null
+ * `published_at` for an unpublished draft. The picker only needs [id] and [title]; the rest mirrors
+ * the server instead of guessing keys the API never sends (`name`, `posts_count`).
+ */
 data class CollectionItem(
     @SerializedName("id") val id: JsonElement? = null,
+    @SerializedName("pid") val profileId: JsonElement? = null,
     @SerializedName("title") val title: String? = null,
-    @SerializedName("name") val name: String? = null,
     @SerializedName("description") val description: String? = null,
     @SerializedName("visibility") val visibility: String? = null,
-    @SerializedName("posts_count") val postsCount: Int? = null
+    @SerializedName("url") val url: String? = null,
+    @SerializedName("thumb") val thumb: String? = null,
+    @SerializedName("post_count") val postCount: Int? = null,
+    @SerializedName("published_at") val publishedAt: String? = null,
+    @SerializedName("updated_at") val updatedAt: String? = null
 ) {
     fun getIdString(): String? = id.toSafeString()
-    fun getDisplayName(): String = title?.takeIf { it.isNotBlank() }
-        ?: name?.takeIf { it.isNotBlank() }
-        ?: "Untitled Collection"
+    fun getDisplayName(): String = title?.takeIf { it.isNotBlank() } ?: "Untitled Collection"
 }
 
 data class AccountResponse(

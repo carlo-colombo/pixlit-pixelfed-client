@@ -1,5 +1,12 @@
 # Task 71 — UX-16: Surface collection-create failures
 
+> **Obsolete (API constraint discovered after this task was written):** Pixelfed has no
+> collection-create endpoint on the OAuth API. `POST /api/pixelfed/v1/collections` is a 404; the
+> only creation path is the session-authenticated web route `GET /i/collections/create`, which an
+> app holding an OAuth token cannot call. The app's create action and dialog were therefore removed
+> and the picker now lists existing collections with a refresh action; there is no create failure
+> left to surface. The rest of this task is kept for history.
+
 **Wave 4 · Priority P3 · Size S · Status: Todo.**
 Backlog: [docs/backlog.md](../../../backlog.md) · Evidence: [05-ux-compose.md](../../../review/05-ux-compose.md) low AlertDialog for collection creation swallows failures
 

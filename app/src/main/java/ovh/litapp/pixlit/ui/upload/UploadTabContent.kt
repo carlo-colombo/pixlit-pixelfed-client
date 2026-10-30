@@ -290,7 +290,7 @@ fun UploadTabContent(
                 selectedCollectionIds = state.selectedCollectionIds,
                 isLoadingCollections = state.isLoadingCollections,
                 onCollectionToggle = callbacks.onCollectionToggle,
-                onCreateCollection = callbacks.onCreateCollection
+                onRefreshCollections = callbacks.onRefreshCollections
             )
         }
 

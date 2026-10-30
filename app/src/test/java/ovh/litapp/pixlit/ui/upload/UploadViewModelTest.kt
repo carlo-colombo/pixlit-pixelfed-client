@@ -197,15 +197,18 @@ class UploadViewModelTest {
     }
 
     @Test
-    fun `createAndSelectCollection creates and selects new collection`() = runTest {
-        val newCol = CollectionItem(id = JsonPrimitive("new_1"), title = "Architecture")
-        coEvery { repository.createCollection("Architecture", null) } returns Fetch.Fresh(newCol)
+    fun `toggleCollectionSelection refuses a fourth collection`() = runTest {
+        // The status creator validates `collection_ids` as max:3; a fourth would 422 the post.
+        viewModel.toggleCollectionSelection("col1")
+        viewModel.toggleCollectionSelection("col2")
+        viewModel.toggleCollectionSelection("col3")
+        viewModel.toggleCollectionSelection("col4")
 
-        viewModel.createAndSelectCollection("Architecture")
-        advanceUntilIdle()
-
-        assert(viewModel.uiState.value.selectedCollectionIds.contains("new_1"))
-        assert(viewModel.uiState.value.userCollections.any { it.getIdString() == "new_1" })
+        assertEquals(setOf("col1", "col2", "col3"), viewModel.uiState.value.selectedCollectionIds)
+        assertEquals(
+            "A post can be added to at most 3 collections",
+            viewModel.uiState.value.statusMessage
+        )
     }
 
     @Test

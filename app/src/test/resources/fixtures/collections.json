@@ -1,18 +1,29 @@
 [
   {
-    "id": "c0ffee12-3456-4abc-9def-0123456789ab",
+    "id": "740123456789012345",
+    "pid": "987654321",
     "title": "Darkroom 2024",
     "description": "Film, mostly.",
     "visibility": "public",
-    "posts_count": 12
+    "url": "https://pixelfed.example/c/740123456789012345",
+    "thumb": "https://pixelfed.example/storage/media/555000113/upload.jpg",
+    "post_count": 12,
+    "published_at": "2024-05-01T18:22:31.000000Z",
+    "updated_at": "2024-05-02T09:10:00.000000Z"
   },
   {
-    "id": "c0ffee12-3456-4abc-9def-0123456789ac",
-    "name": "Untitled drafts",
-    "visibility": "private",
-    "posts_count": 0
+    "id": "740123456789012346",
+    "pid": "987654321",
+    "title": null,
+    "description": null,
+    "visibility": "draft",
+    "url": "https://pixelfed.example/c/740123456789012346",
+    "thumb": "https://pixelfed.example/storage/no-preview.png",
+    "post_count": 0,
+    "published_at": null,
+    "updated_at": "2024-05-03T07:00:00.000000Z"
   },
   {
-    "id": "c0ffee12-3456-4abc-9def-0123456789ad"
+    "id": "740123456789012347"
   }
 ]

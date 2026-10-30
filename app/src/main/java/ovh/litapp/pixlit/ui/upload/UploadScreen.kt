@@ -81,7 +81,7 @@ fun UploadScreen(
             onSetCustomLocation = viewModel::setCustomLocation,
             onClearLocation = viewModel::clearLocation,
             onCollectionToggle = viewModel::toggleCollectionSelection,
-            onCreateCollection = { title, description -> viewModel.createAndSelectCollection(title, description) },
+            onRefreshCollections = viewModel::fetchCollections,
             onPageChanged = viewModel::onPageChanged,
             onAddImages = viewModel::addImages,
             onShiftLeft = viewModel::shiftLeft,

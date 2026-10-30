@@ -100,6 +100,24 @@ class PixelfedRepositoryNetworkTest {
     }
 
     @Test
+    fun `collections are read from the paginated collections endpoint`() = runTest {
+        server.enqueue(MockResponse().setBody(ACCOUNT_BODY))
+        server.enqueue(MockResponse().setBody(COLLECTIONS_BODY))
+
+        val result = repository.getUserCollections()
+
+        assertTrue(result is Fetch.Fresh)
+        assertEquals(1, result.valueOrNull()?.size)
+        assertEquals("/api/v1/accounts/verify_credentials", server.takeRequest().path)
+        // The old `accounts/{id}/collections` path 404s on every instance; the real route is
+        // `collections/accounts/{id}` and answers a bare array (no paginator envelope).
+        assertEquals(
+            "/api/pixelfed/v1/collections/accounts/987654321?page=1",
+            server.takeRequest().path
+        )
+    }
+
+    @Test
     fun `a 5xx from place search is a typed failure, not an empty success`() = runTest {
         server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"internal_error"}"""))
 
@@ -132,6 +150,8 @@ class PixelfedRepositoryNetworkTest {
     private companion object {
         const val ACCOUNT_BODY = """{"id":987654321}"""
         const val UNAUTHENTICATED_BODY = """{"message":"Unauthenticated."}"""
+        const val COLLECTIONS_BODY =
+            """[{"id":"740123456789012345","pid":"987654321","title":"Street","visibility":"public","post_count":3,"published_at":"2024-05-01T18:22:31.000000Z"}]"""
         const val STATUSES_BODY =
             """[{"id":"101","content":"Harbour #harbour","created_at":"2024-05-01T18:22:31.000000Z"}]"""
     }

@@ -71,7 +71,7 @@ data class UploadCallbacks(
     val onSetCustomLocation: (String) -> Unit = {},
     val onClearLocation: () -> Unit = {},
     val onCollectionToggle: (String) -> Unit = {},
-    val onCreateCollection: (String, String?) -> Unit = { _, _ -> },
+    val onRefreshCollections: () -> Unit = {},
     val onPageChanged: (Int) -> Unit = {},
     val onAddImages: (List<Uri>) -> Unit = {},
     val onShiftLeft: (Int) -> Unit = {},

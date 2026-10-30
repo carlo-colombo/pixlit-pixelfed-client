@@ -97,17 +97,20 @@ class ApiDtoFixtureTest {
     }
 
     @Test
-    fun `collections fixture keeps ids, counts and title-to-name fallback`() {
+    fun `collections fixture keeps ids, post_count and the title fallback`() {
         val collections =
             gson.fromJson(fixture("collections.json"), Array<CollectionItem>::class.java).toList()
 
         assertEquals(3, collections.size)
-        assertEquals("c0ffee12-3456-4abc-9def-0123456789ab", collections[0].getIdString())
-        assertEquals(12, collections[0].postsCount)
+        assertEquals("740123456789012345", collections[0].getIdString())
+        assertEquals("987654321", collections[0].profileId?.asString)
+        assertEquals(12, collections[0].postCount)
         assertEquals("Darkroom 2024", collections[0].getDisplayName())
-        // Pixelfed has answered with `name` instead of `title`; the picker must not show a blank row.
-        assertEquals("Untitled drafts", collections[1].getDisplayName())
+        assertEquals("public", collections[0].visibility)
+        // A draft is a real collection (published_at is null); only its title is missing here.
+        assertNull(collections[1].publishedAt)
+        assertEquals("Untitled Collection", collections[1].getDisplayName())
         assertEquals("Untitled Collection", collections[2].getDisplayName())
-        assertNull(collections[2].postsCount)
+        assertNull(collections[2].postCount)
     }
 }

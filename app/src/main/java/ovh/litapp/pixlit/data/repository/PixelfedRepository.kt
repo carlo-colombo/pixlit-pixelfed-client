@@ -161,9 +161,14 @@ class PixelfedRepository @Inject constructor(
     }
 
     /**
-     * The account's collections. An empty list is a real answer ("you have none"), not a reason to
-     * fabricate placeholders (DATA-05 / UP-13): the previous static fallback produced `local_…` ids
-     * that 404ed silently on assignment while the UI reported the collection as added.
+     * The account's collections, newest first. An empty list is a real answer ("you have none"),
+     * not a reason to fabricate placeholders (DATA-05 / UP-13): the previous static fallback
+     * produced `local_…` ids that 404ed silently on assignment while the UI reported the collection
+     * as added.
+     *
+     * Read from `collections/accounts/{id}` (the `accounts/{id}/collections` path the app used was a
+     * 404). The endpoint paginates at 9 and returns a bare array, so pages are read until a short
+     * one arrives; otherwise a user with more than nine collections silently lost the rest.
      */
     suspend fun getUserCollections(): Fetch<List<CollectionItem>> = withContext(Dispatchers.IO) {
         val instanceUrl = tokenManager.instanceUrl
@@ -177,50 +182,24 @@ class PixelfedRepository @Inject constructor(
             val api = apiFactory.get(instanceUrl)
             val accountId = statusRemoteSource.requireAccountId(api, instanceUrl, accessToken)
                 .getOrElse { return@withContext Fetch.Failed(it) }
-            val response = api.getUserCollections("Bearer $accessToken", accountId)
-            val collections = response.body()
-            if (response.isSuccessful && collections != null) {
-                Fetch.Fresh(collections)
-            } else {
-                Fetch.Failed(response.asPixelfedHttpException("GET api/pixelfed/v1/accounts/$accountId/collections"))
+            val collections = mutableListOf<CollectionItem>()
+            var page = 1
+            while (page <= MAX_COLLECTION_PAGES) {
+                val endpoint = "GET api/pixelfed/v1/collections/accounts/$accountId?page=$page"
+                val response = api.getUserCollections("Bearer $accessToken", accountId, page)
+                val body = response.body()
+                if (!response.isSuccessful || body == null) {
+                    return@withContext Fetch.Failed(response.asPixelfedHttpException(endpoint))
+                }
+                collections += body
+                if (body.size < COLLECTIONS_PAGE_SIZE) break
+                page++
             }
+            Fetch.Fresh(collections)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "getUserCollections failed", e)
-            Fetch.Failed(e)
-        }
-    }
-
-    /**
-     * Creates a collection on the server. A failure is reported as [Fetch.Failed] so the UI cannot
-     * show a collection that does not exist (DATA-05 / 04 F-11); there is no local fabrication.
-     */
-    suspend fun createCollection(
-        title: String,
-        description: String? = null,
-        visibility: String = "public"
-    ): Fetch<CollectionItem> = withContext(Dispatchers.IO) {
-        val instanceUrl = tokenManager.instanceUrl
-        val accessToken = tokenManager.accessToken
-
-        if (instanceUrl.isNullOrBlank() || accessToken.isNullOrBlank()) {
-            return@withContext Fetch.Failed(NotLoggedInException())
-        }
-
-        try {
-            val api = apiFactory.get(instanceUrl)
-            val response = api.createCollection("Bearer $accessToken", title, description, visibility)
-            val collection = response.body()
-            if (response.isSuccessful && collection != null) {
-                Fetch.Fresh(collection)
-            } else {
-                Fetch.Failed(response.asPixelfedHttpException("POST api/pixelfed/v1/collections"))
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "createCollection failed", e)
             Fetch.Failed(e)
         }
     }
@@ -334,6 +313,12 @@ class PixelfedRepository @Inject constructor(
     companion object {
         private const val TAG = "PixelfedRepository"
         private const val STATIC_STATUSES_ASSET = "pixelfed-statuses.json"
+
+        /** `CollectionController` hardcodes `paginate(9)` on the collection read endpoints. */
+        private const val COLLECTIONS_PAGE_SIZE = 9
+
+        /** A guard against a misbehaving paginator returning a full page forever. */
+        private const val MAX_COLLECTION_PAGES = 10
 
         /** How long a status refresh is considered current; a forced refresh ignores it. */
         const val STATUS_REFRESH_TTL_MS = StatusRemoteSource.STATUS_REFRESH_TTL_MS
