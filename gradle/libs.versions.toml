@@ -26,7 +26,7 @@ robolectric = "4.17"
 # app/src/test/resources/robolectric.properties, or every Robolectric test fails with
 # "Unable to locate dependency". Robolectric 4.16.1 pairs API 34 with
 # android-all-instrumented "14" / revision "10818077" (i7 = instrumented).
-androidAllInstrumented = "14-robolectric-10818077-i7"
+androidAllInstrumented = "17-robolectric-15733970-i7"
 hilt = "2.60.1"
 hiltNavigationCompose = "1.4.0"
 room = "2.8.5"
