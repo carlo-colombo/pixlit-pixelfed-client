@@ -1,5 +1,5 @@
 [versions]
-agp = "9.5.0"
+agp = "9.5.1"
 kotlin = "2.4.21"
 coreKtx = "1.19.1"
 junit = "4.13.2"
@@ -35,7 +35,7 @@ hiltWork = "1.4.0"
 work = "2.12.0"
 exifinterface = "1.4.2"
 securityCrypto = "1.1.0"
-ksp = "2.3.12" # KSP is released independently of Kotlin; this pin is verified against Kotlin 2.4.10 by the KSP build.
+ksp = "2.3.13" # KSP is released independently of Kotlin; this pin is verified against Kotlin 2.4.10 by the KSP build.
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
